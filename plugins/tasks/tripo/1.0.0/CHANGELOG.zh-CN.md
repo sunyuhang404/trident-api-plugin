@@ -1,13 +1,13 @@
 ---
 changelogVersion: 1
 plugin: tripo
-version: "1.0.3"
+version: "1.0.4"
 locale: zh-CN
 ---
 # Changelog
 
-## [1.0.3]
+## [1.0.4]
 
 ### Changed
 
-- 每次请求上报官方费用金额，因此一个单价就能覆盖整张价目表。
+- 每次请求只上报所选价档，各项价格在控制台配置。

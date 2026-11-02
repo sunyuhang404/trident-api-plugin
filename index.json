@@ -11,17 +11,26 @@
         "zh": "通过 Tripo OpenAPI 任务接口生成三维模型"
       },
       "website": "https://github.com/sunyuhang404/trident-api-plugin",
-      "models": ["tripo"],
+      "models": [
+        "tripo",
+        "v3.1-20260211",
+        "v3.0-20250812",
+        "v2.5-20250123",
+        "P1-20260311",
+        "P2-20260801"
+      ],
       "baseUrl": "https://openapi.tripo3d.com/v3",
-      "latest": "1.0.3",
+      "latest": "1.0.5",
       "versions": [
         {
-          "version": "1.0.3",
+          "version": "1.0.5",
           "kind": "task",
           "path": "plugins/tasks/tripo/1.0.0/plugin.js",
-          "sha256": "42e5a219025fbe9ea838baf153a81bcf58d906631432ce10159e31fd5eaea02b",
+          "sha256": "be4731d742cef94f544933c6722e1efd9961666663db7fd6342cd65bf0416ba4",
           "baseUrl": "https://openapi.tripo3d.com/v3",
-          "allowedHosts": ["cdn.tripo3d.ai"]
+          "allowedHosts": [
+            "cdn.tripo3d.ai"
+          ]
         }
       ]
     }
