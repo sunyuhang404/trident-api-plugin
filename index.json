@@ -1,0 +1,29 @@
+{
+  "indexVersion": 1,
+  "name": "Trident plugins",
+  "plugins": [
+    {
+      "key": "tripo",
+      "name": "Tripo",
+      "icon": "text:Tr",
+      "description": {
+        "en": "Tripo 3D generation through the Tripo OpenAPI task endpoint",
+        "zh": "通过 Tripo OpenAPI 任务接口生成三维模型"
+      },
+      "website": "https://github.com/sunyuhang404/trident-api-plugin",
+      "models": ["tripo"],
+      "baseUrl": "https://openapi.tripo3d.com/v3",
+      "latest": "1.0.0",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "kind": "task",
+          "path": "plugins/tasks/tripo/1.0.0/plugin.js",
+          "sha256": "e13461cddd49411cde0e1b2717b3bfa2e8685323640ce3554d04049f4494e231",
+          "baseUrl": "https://openapi.tripo3d.com/v3",
+          "allowedHosts": ["cdn.tripo3d.ai"]
+        }
+      ]
+    }
+  ]
+}
