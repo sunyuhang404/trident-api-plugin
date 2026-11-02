@@ -39,7 +39,7 @@ export const meta = {
     en: "Tripo 3D generation through the Tripo OpenAPI v3",
     zh: "通过 Tripo OpenAPI v3 生成三维模型",
   },
-  version: "1.0.2",
+  version: "1.0.3",
   author: { name: "sunyuhang404", url: "https://github.com/sunyuhang404/trident-api-plugin" },
   website: "https://github.com/sunyuhang404/trident-api-plugin",
   baseUrl: "https://openapi.tripo3d.com/v3",
@@ -72,55 +72,21 @@ export const meta = {
     { method: "GET", path: "/tripo/v3/tasks/:task_id", type: "query", render: "taskStatus" },
   ],
   usageSchema: {
-    // One accepted generation task. The admin price is per task, not Tripo's own credit amount.
-    generations: {
+    // Official list-price amount for this request. The admin unit price is a multiplier: 1 charges that amount.
+    official_amount: {
       type: "number",
       unit: "count",
-      unitLabel: { en: "generation", zh: "次" },
-      description: { en: "3D generation unit price", zh: "3D 生成单价" },
-    },
-    task_type: {
-      enum: TASK_TYPES,
-      enumLabels: {
-        "text-to-model": { en: "Text to 3D model", zh: "文生三维" },
-        "image-to-model": { en: "Image to 3D model", zh: "图生三维" },
-        "multiview-to-model": { en: "Multiview to 3D model", zh: "多视图生三维" },
-        "text-to-image": { en: "Text to image", zh: "文生图片" },
-        "image-to-image": { en: "Image to image", zh: "图生图片" },
-        "image-to-multiview": { en: "Image to multiview", zh: "图生多视图" },
-        "edit-multiview": { en: "Edit multiview", zh: "编辑多视图" },
-        "image-to-splat": { en: "Image to Gaussian splat", zh: "图生高斯泼溅" },
-        "image-to-depth": { en: "Image to depth", zh: "图生深度图" },
-        texture: { en: "Texture model", zh: "生成贴图" },
-        convert: { en: "Convert model", zh: "转换模型" },
-        "import": { en: "Import model", zh: "导入模型" },
-        segment: { en: "Segment mesh", zh: "网格分割" },
-        smartsegment: { en: "Smart segment mesh", zh: "智能分割" },
-        complete: { en: "Complete mesh", zh: "网格补全" },
-        decimate: { en: "Decimate mesh", zh: "重拓扑" },
-        uv: { en: "Unwrap UV", zh: "智能 UV" },
-        "rig-check": { en: "Rig check", zh: "绑骨检查" },
-        rig: { en: "Rig model", zh: "绑定骨骼" },
-        retarget: { en: "Retarget animation", zh: "重定向动画" },
-      },
-      description: { en: "Generation task type", zh: "生成任务类型" },
-    },
-    // Enum, not boolean: the price matrix only adds a column for enum fields.
-    texture: {
-      enum: ["no", "yes"],
-      description: { en: "Generated texture", zh: "贴图" },
-      enumLabels: {
-        no: { en: "No texture", zh: "无贴图" },
-        yes: { en: "With texture", zh: "有贴图" },
-      },
+      unitLabel: { en: "list price", zh: "标价" },
+      description: { en: "Official charge unit price", zh: "官方费用单价" },
     },
   },
   usageExamples: [
-    { label: "text to model", facts: { generations: 1, task_type: "text-to-model", texture: "yes" } },
-    { label: "text to model without texture", facts: { generations: 1, task_type: "text-to-model", texture: "no" } },
-    { label: "image to model", facts: { generations: 1, task_type: "image-to-model", texture: "yes" } },
-    { label: "multiview to model", facts: { generations: 1, task_type: "multiview-to-model", texture: "yes" } },
-    { label: "texture", facts: { generations: 1, task_type: "texture", texture: "no" } },
+    { label: "text to 3d", facts: { official_amount: 1.4 } },
+    { label: "text to 3d without texture", facts: { official_amount: 0.7 } },
+    { label: "image to 3d", facts: { official_amount: 2.1 } },
+    { label: "p2 text to 3d", facts: { official_amount: 7 } },
+    { label: "retarget three animations", facts: { official_amount: 2.1 } },
+    { label: "seedream image", facts: { official_amount: 0.35 } },
   ],
 };
 
@@ -255,8 +221,138 @@ function textureEnabled(body, action) {
   return record.texture !== false;
 }
 
-function usageFacts(taskType, texture) {
-  return { generations: 1, task_type: taskType, texture: texture ? "yes" : "no" };
+function usageFacts(amount) {
+  return { official_amount: amount };
+}
+
+function objectRecord(body) {
+  return body && typeof body === "object" && !Array.isArray(body) ? body : {};
+}
+
+function isPModel(model) {
+  const name = model.toUpperCase();
+  return name.indexOf("P1") === 0 || name.indexOf("P2") === 0;
+}
+
+function imageTier(size) {
+  const text = trimmed(size).toLowerCase();
+  if (!text || text === "auto") return "2k";
+  if (text === "0.5k" || text === "1k") return "1k";
+  if (text === "2k" || text === "3k") return "2k";
+  if (text === "4k") return "4k";
+  const match = text.match(/^(\d+)x(\d+)$/);
+  if (!match) return "2k";
+  const longEdge = Math.max(Number(match[1]), Number(match[2]));
+  if (longEdge <= 1024) return "1k";
+  if (longEdge <= 2048) return "2k";
+  return "4k";
+}
+
+function imageCredits(body) {
+  const record = objectRecord(body);
+  const model = trimmed(record.model) || "seedream_v4";
+  const tier = imageTier(record.size);
+  const quality = trimmed(record.quality) || "low";
+  if (model === "seedream_v4" || model === "seedream_v5" || model === "banana") return 5;
+  if (model === "banana2") return tier === "4k" ? 15 : 10;
+  if (model === "banana_pro") return tier === "4k" ? 20 : 15;
+  if (model === "chat_image_1") return 5;
+  if (model === "chat_image_1.5") return 10;
+  const chat = model === "chat_image_2" || model === "chat_image_2.5_flare" || model === "chat_image_2.5_sunburst";
+  if (!chat) return 5;
+  const flare = model !== "chat_image_2";
+  if (quality === "high") return tier === "1k" ? 20 : tier === "4k" ? 40 : 25;
+  if (flare && quality === "xhigh") return tier === "1k" ? 25 : tier === "4k" ? 45 : 30;
+  if (flare && quality === "max") return tier === "1k" ? 30 : 50;
+  return tier === "4k" ? 15 : 10;
+}
+
+function generationCredits(body, action) {
+  const record = objectRecord(body);
+  const model = trimmed(record.model) || "v3.1-20260211";
+  const quality = trimmed(record.texture_quality) || "standard";
+  if (isPModel(model)) {
+    let credits = 100;
+    if (textureEnabled(record, action)) {
+      if (quality === "detailed") credits = 120;
+      else if (quality === "extreme") credits = 130;
+      else credits = 110;
+    }
+    if (model.toUpperCase().indexOf("P2") === 0 && record.quad === true) credits += 5;
+    return credits;
+  }
+  const addons = model !== "v2.5-20250123";
+  const parts = addons && record.generate_parts === true && record.smart_low_poly !== true;
+  const textured = parts ? false : textureEnabled(record, action);
+  let credits = action === "text-to-model" ? (textured ? 20 : 10) : (textured ? 30 : 20);
+  if (!addons) return credits;
+  if (textured && quality === "detailed") credits += 10;
+  if (textured && quality === "extreme") credits += 20;
+  if (trimmed(record.geometry_quality) === "detailed") credits += 20;
+  if (record.quad === true) credits += 5;
+  if (record.smart_low_poly === true) credits += 10;
+  else if (parts) credits += 20;
+  return credits;
+}
+
+function textureCredits(body) {
+  const quality = trimmed(objectRecord(body).texture_quality) || "standard";
+  if (quality === "detailed") return 20;
+  if (quality === "extreme") return 30;
+  return 10;
+}
+
+function convertCredits(body) {
+  const record = objectRecord(body);
+  const format = trimmed(record.texture_format).toUpperCase();
+  const advanced = record.quad === true ||
+    (record.face_limit !== undefined && record.face_limit !== null) ||
+    record.flatten_bottom === true ||
+    (record.flatten_bottom_threshold !== undefined && record.flatten_bottom_threshold !== null && Number(record.flatten_bottom_threshold) !== 0.01) ||
+    (record.texture_size !== undefined && record.texture_size !== null && Number(record.texture_size) !== 4096) ||
+    (!!format && format !== "JPEG") ||
+    record.pivot_to_center_bottom === true ||
+    (record.scale_factor !== undefined && record.scale_factor !== null && Number(record.scale_factor) !== 1);
+  return advanced ? 10 : 5;
+}
+
+function decimateCredits(body) {
+  const record = objectRecord(body);
+  const model = trimmed(record.model) || "v2.0";
+  if (model.indexOf("v3") === 0) return record.quad === true ? 40 : 35;
+  if (model.indexOf("v1") === 0) return 10;
+  return 30;
+}
+
+function boundedCount(value, limit) {
+  if (!Array.isArray(value)) return 0;
+  return Math.max(0, Math.min(value.length, limit));
+}
+
+function officialCredits(body, action) {
+  if (action === "text-to-model" || action === "image-to-model" || action === "multiview-to-model") return generationCredits(body, action);
+  if (action === "text-to-image" || action === "image-to-image") return imageCredits(body);
+  if (action === "image-to-multiview") return 10;
+  if (action === "edit-multiview") return boundedCount(objectRecord(body).prompts, 4) * 5;
+  if (action === "image-to-splat") return 30;
+  if (action === "texture") return textureCredits(body);
+  if (action === "convert") return convertCredits(body);
+  if (action === "segment") return 40;
+  if (action === "smartsegment") return trimmed(objectRecord(body).seg_type) === "model" ? 55 : 85;
+  if (action === "complete") return trimmed(objectRecord(body).completion_mode) === "quick_cap" ? 30 : 50;
+  if (action === "decimate") return decimateCredits(body);
+  if (action === "uv") return 20;
+  if (action === "rig") return 25;
+  if (action === "retarget") {
+    const record = objectRecord(body);
+    if (Array.isArray(record.animations)) return boundedCount(record.animations, 5) * 10;
+    return trimmed(record.animation) ? 10 : 0;
+  }
+  return 0;
+}
+
+function officialAmount(body, action) {
+  return officialCredits(body, action) * 7 / 100;
 }
 
 function taskEnvelope(body) {
@@ -325,14 +421,14 @@ export function parseSubmitResponse(ctx, response) {
   const taskId = trimmed(envelope.data.task_id);
   if (!taskId) throw new Error("Tripo did not return a task id.");
   const action = trimmed(ctx && ctx.action);
-  return { taskId: taskId, taskData: response.body, state: { texture: textureEnabled(ctx && ctx.requestBody, action) } };
+  return { taskId: taskId, taskData: response.body, state: { official_amount: officialAmount(ctx && ctx.requestBody, action) } };
 }
 
 export function extractUsage(ctx) {
   if (ctx.usagePurpose === "billing_ratios") return null;
   const taskType = trimmed(ctx.action);
   if (TASK_TYPES.indexOf(taskType) < 0) return null;
-  return usageFacts(taskType, textureEnabled(ctx.requestBody, taskType));
+  return usageFacts(officialAmount(ctx.requestBody, taskType));
 }
 
 export function buildQueryRequest(ctx) {
@@ -367,8 +463,9 @@ export function extractUsageOnComplete(task, result) {
   const taskType = trimmed(task && task.action);
   if (TASK_TYPES.indexOf(taskType) < 0) return null;
   const state = task && task.state;
-  const saved = state && typeof state === "object" && !Array.isArray(state) && typeof state.texture === "boolean" ? state.texture : TEXTURED_ACTIONS.indexOf(taskType) >= 0;
-  return usageFacts(taskType, saved);
+  const saved = state && typeof state === "object" && !Array.isArray(state) ? Number(state.official_amount) : NaN;
+  if (!Number.isFinite(saved) || saved < 0) return null;
+  return usageFacts(saved);
 }
 
 export function listArtifacts(task) {

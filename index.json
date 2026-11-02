@@ -13,13 +13,13 @@
       "website": "https://github.com/sunyuhang404/trident-api-plugin",
       "models": ["tripo"],
       "baseUrl": "https://openapi.tripo3d.com/v3",
-      "latest": "1.0.2",
+      "latest": "1.0.3",
       "versions": [
         {
-          "version": "1.0.2",
+          "version": "1.0.3",
           "kind": "task",
           "path": "plugins/tasks/tripo/1.0.0/plugin.js",
-          "sha256": "488a9c21e7def996b9a22d53280b1f296cdce75427b9e0adcec2926b23fca748",
+          "sha256": "42e5a219025fbe9ea838baf153a81bcf58d906631432ce10159e31fd5eaea02b",
           "baseUrl": "https://openapi.tripo3d.com/v3",
           "allowedHosts": ["cdn.tripo3d.ai"]
         }
