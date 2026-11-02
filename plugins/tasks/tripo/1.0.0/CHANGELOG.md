@@ -1,7 +1,15 @@
-# 1.0.1
+---
+changelogVersion: 1
+plugin: tripo
+version: "1.0.2"
+locale: en
+translations:
+  zh-CN: CHANGELOG.zh-CN.md
+---
+# Changelog
 
-Report whether a 3D generation request keeps texture, so the price table can split textured and untextured tasks.
+## [1.0.2]
 
-# 1.0.0
+### Changed
 
-Submit and poll Tripo OpenAPI v3 tasks. The vendor base URL is `https://openapi.tripo3d.com/v3`.
+- Each task type can set a separate price for requests with texture and requests without texture.

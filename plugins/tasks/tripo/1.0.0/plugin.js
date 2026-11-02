@@ -39,7 +39,7 @@ export const meta = {
     en: "Tripo 3D generation through the Tripo OpenAPI v3",
     zh: "通过 Tripo OpenAPI v3 生成三维模型",
   },
-  version: "1.0.1",
+  version: "1.0.2",
   author: { name: "sunyuhang404", url: "https://github.com/sunyuhang404/trident-api-plugin" },
   website: "https://github.com/sunyuhang404/trident-api-plugin",
   baseUrl: "https://openapi.tripo3d.com/v3",
@@ -105,17 +105,22 @@ export const meta = {
       },
       description: { en: "Generation task type", zh: "生成任务类型" },
     },
+    // Enum, not boolean: the price matrix only adds a column for enum fields.
     texture: {
-      type: "boolean",
-      description: { en: "Whether texture is generated", zh: "是否生成贴图" },
+      enum: ["no", "yes"],
+      description: { en: "Generated texture", zh: "贴图" },
+      enumLabels: {
+        no: { en: "No texture", zh: "无贴图" },
+        yes: { en: "With texture", zh: "有贴图" },
+      },
     },
   },
   usageExamples: [
-    { label: "text to model", facts: { generations: 1, task_type: "text-to-model", texture: true } },
-    { label: "text to model without texture", facts: { generations: 1, task_type: "text-to-model", texture: false } },
-    { label: "image to model", facts: { generations: 1, task_type: "image-to-model", texture: true } },
-    { label: "multiview to model", facts: { generations: 1, task_type: "multiview-to-model", texture: true } },
-    { label: "texture", facts: { generations: 1, task_type: "texture", texture: false } },
+    { label: "text to model", facts: { generations: 1, task_type: "text-to-model", texture: "yes" } },
+    { label: "text to model without texture", facts: { generations: 1, task_type: "text-to-model", texture: "no" } },
+    { label: "image to model", facts: { generations: 1, task_type: "image-to-model", texture: "yes" } },
+    { label: "multiview to model", facts: { generations: 1, task_type: "multiview-to-model", texture: "yes" } },
+    { label: "texture", facts: { generations: 1, task_type: "texture", texture: "no" } },
   ],
 };
 
@@ -251,7 +256,7 @@ function textureEnabled(body, action) {
 }
 
 function usageFacts(taskType, texture) {
-  return { generations: 1, task_type: taskType, texture: texture === true };
+  return { generations: 1, task_type: taskType, texture: texture ? "yes" : "no" };
 }
 
 function taskEnvelope(body) {
