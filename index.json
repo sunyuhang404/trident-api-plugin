@@ -19,7 +19,7 @@
           "version": "1.0.0",
           "kind": "task",
           "path": "plugins/tasks/tripo/1.0.0/plugin.js",
-          "sha256": "059b3f673e0b2c3d9b00de59576cd3143b772c76bfb45d7629024aff79973f68",
+          "sha256": "3bf5a1c5520c18f51f100c603a1ed6d2958d4ceeb7ae813f2e847d2e17a58013",
           "baseUrl": "https://openapi.tripo3d.com/v3",
           "allowedHosts": ["cdn.tripo3d.ai"]
         }
