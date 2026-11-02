@@ -26,6 +26,10 @@ const TASK_TYPES = [
   "retarget",
 ];
 
+// These three requests accept texture. Tripo defaults both texture and pbr to
+// true, and pbr true forces texture on.
+const TEXTURED_ACTIONS = ["text-to-model", "image-to-model", "multiview-to-model"];
+
 export const meta = {
   apiVersion: 1,
   key: "tripo",
@@ -35,7 +39,7 @@ export const meta = {
     en: "Tripo 3D generation through the Tripo OpenAPI v3",
     zh: "通过 Tripo OpenAPI v3 生成三维模型",
   },
-  version: "1.0.0",
+  version: "1.0.1",
   author: { name: "sunyuhang404", url: "https://github.com/sunyuhang404/trident-api-plugin" },
   website: "https://github.com/sunyuhang404/trident-api-plugin",
   baseUrl: "https://openapi.tripo3d.com/v3",
@@ -101,12 +105,17 @@ export const meta = {
       },
       description: { en: "Generation task type", zh: "生成任务类型" },
     },
+    texture: {
+      type: "boolean",
+      description: { en: "Whether texture is generated", zh: "是否生成贴图" },
+    },
   },
   usageExamples: [
-    { label: "text to model", facts: { generations: 1, task_type: "text-to-model" } },
-    { label: "image to model", facts: { generations: 1, task_type: "image-to-model" } },
-    { label: "multiview to model", facts: { generations: 1, task_type: "multiview-to-model" } },
-    { label: "texture", facts: { generations: 1, task_type: "texture" } },
+    { label: "text to model", facts: { generations: 1, task_type: "text-to-model", texture: true } },
+    { label: "text to model without texture", facts: { generations: 1, task_type: "text-to-model", texture: false } },
+    { label: "image to model", facts: { generations: 1, task_type: "image-to-model", texture: true } },
+    { label: "multiview to model", facts: { generations: 1, task_type: "multiview-to-model", texture: true } },
+    { label: "texture", facts: { generations: 1, task_type: "texture", texture: false } },
   ],
 };
 
@@ -234,8 +243,15 @@ function withUpstreamTaskIds(body, originTasks) {
   return next;
 }
 
-function usageFacts(taskType) {
-  return { generations: 1, task_type: taskType };
+function textureEnabled(body, action) {
+  if (TEXTURED_ACTIONS.indexOf(action) < 0) return false;
+  const record = body && typeof body === "object" && !Array.isArray(body) ? body : {};
+  if (record.pbr !== false) return true;
+  return record.texture !== false;
+}
+
+function usageFacts(taskType, texture) {
+  return { generations: 1, task_type: taskType, texture: texture === true };
 }
 
 function taskEnvelope(body) {
@@ -303,14 +319,15 @@ export function parseSubmitResponse(ctx, response) {
   if (envelope.code !== 0) throw new Error(failureReason(envelope) || "Tripo rejected the task.");
   const taskId = trimmed(envelope.data.task_id);
   if (!taskId) throw new Error("Tripo did not return a task id.");
-  return { taskId: taskId, taskData: response.body };
+  const action = trimmed(ctx && ctx.action);
+  return { taskId: taskId, taskData: response.body, state: { texture: textureEnabled(ctx && ctx.requestBody, action) } };
 }
 
 export function extractUsage(ctx) {
   if (ctx.usagePurpose === "billing_ratios") return null;
   const taskType = trimmed(ctx.action);
   if (TASK_TYPES.indexOf(taskType) < 0) return null;
-  return usageFacts(taskType);
+  return usageFacts(taskType, textureEnabled(ctx.requestBody, taskType));
 }
 
 export function buildQueryRequest(ctx) {
@@ -344,7 +361,9 @@ export function extractUsageOnComplete(task, result) {
   if (!result || result.status !== "SUCCESS") return null;
   const taskType = trimmed(task && task.action);
   if (TASK_TYPES.indexOf(taskType) < 0) return null;
-  return usageFacts(taskType);
+  const state = task && task.state;
+  const saved = state && typeof state === "object" && !Array.isArray(state) && typeof state.texture === "boolean" ? state.texture : TEXTURED_ACTIONS.indexOf(taskType) >= 0;
+  return usageFacts(taskType, saved);
 }
 
 export function listArtifacts(task) {
