@@ -1,5 +1,31 @@
 // Tripo OpenAPI v3 task plugin.
 // https://developers.tripo3d.com/zh/docs/introduction
+
+// Kept separate from `meta`. The marketplace preview only reads a static
+// `export const meta` that the rest of the file does not reference.
+const TASK_TYPES = [
+  "text-to-model",
+  "image-to-model",
+  "multiview-to-model",
+  "text-to-image",
+  "image-to-image",
+  "image-to-multiview",
+  "edit-multiview",
+  "image-to-splat",
+  "image-to-depth",
+  "texture",
+  "convert",
+  "import",
+  "segment",
+  "smartsegment",
+  "complete",
+  "decimate",
+  "uv",
+  "rig-check",
+  "rig",
+  "retarget",
+];
+
 export const meta = {
   apiVersion: 1,
   key: "tripo",
@@ -50,28 +76,7 @@ export const meta = {
       description: { en: "3D generation unit price", zh: "3D 生成单价" },
     },
     task_type: {
-      enum: [
-        "text-to-model",
-        "image-to-model",
-        "multiview-to-model",
-        "text-to-image",
-        "image-to-image",
-        "image-to-multiview",
-        "edit-multiview",
-        "image-to-splat",
-        "image-to-depth",
-        "texture",
-        "convert",
-        "import",
-        "segment",
-        "smartsegment",
-        "complete",
-        "decimate",
-        "uv",
-        "rig-check",
-        "rig",
-        "retarget",
-      ],
+      enum: TASK_TYPES,
       enumLabels: {
         "text-to-model": { en: "Text to 3D model", zh: "文生三维" },
         "image-to-model": { en: "Image to 3D model", zh: "图生三维" },
@@ -104,8 +109,6 @@ export const meta = {
     { label: "texture", facts: { generations: 1, task_type: "texture" } },
   ],
 };
-
-const TASK_TYPES = meta.usageSchema.task_type.enum;
 
 const ENDPOINT_SUFFIX = {
   "text-to-model": "/generation/text-to-model",
