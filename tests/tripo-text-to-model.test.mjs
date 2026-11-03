@@ -259,3 +259,45 @@ test('all generation routes validate billing options and require the documented 
     }
   }
 });
+
+test('submission and polling normalize channel credentials to one Bearer prefix', () => {
+  const cases = [
+    { authHeader: 'tsk_fixture', apiKey: 'tsk_unused' },
+    { authHeader: 'Bearer tsk_fixture' },
+    { authHeader: 'bearer tsk_fixture' },
+    { authHeader: '  Bearer   tsk_fixture  ' },
+    { apiKey: 'tsk_fixture' },
+    { apiKey: 'Bearer tsk_fixture' },
+    { authHeader: '  ', apiKey: 'tsk_fixture' },
+    { authHeader: 'Bearer tsk_fixture', apiKey: 'tsk_unused', upstream: { kind: 'new_api' } },
+  ];
+  for (const credentials of cases) {
+    const ctx = { ...context(versions[0]), baseUrl: 'https://openapi.tripo3d.com/v3', taskId: 'task_fixture', ...credentials };
+    const original = structuredClone(ctx);
+    for (const build of [plugin.buildSubmitRequest, plugin.buildQueryRequest]) {
+      const request = build(ctx);
+      assert.equal(request.headers.Authorization, 'Bearer tsk_fixture');
+      assert.equal(request.url.includes('tsk_fixture'), false);
+    }
+    assert.deepEqual(ctx, original);
+  }
+});
+
+test('missing or malformed credentials fail without including their value in errors', () => {
+  const cases = [
+    [{}, 'A Tripo API key is required.'],
+    [{ authHeader: '  ', apiKey: '  ' }, 'A Tripo API key is required.'],
+    [{ authHeader: 'Bearer' }, 'A Tripo API key is required.'],
+    [{ apiKey: 'Bearer   ' }, 'A Tripo API key is required.'],
+    [{ authHeader: 'Bearer', apiKey: 'tsk_unused' }, 'A Tripo API key is required.'],
+    [{ authHeader: 'Basic fixture_secret' }, 'The Tripo API key format is invalid.'],
+    [{ authHeader: 'tsk_fixture\r\nX-Injected: secret' }, 'The Tripo API key format is invalid.'],
+    [{ apiKey: 'tsk_fixture secret' }, 'The Tripo API key format is invalid.'],
+  ];
+  for (const [credentials, message] of cases) {
+    const ctx = { ...context(versions[0]), baseUrl: 'https://openapi.tripo3d.com/v3', taskId: 'task_fixture', ...credentials };
+    for (const build of [plugin.buildSubmitRequest, plugin.buildQueryRequest]) {
+      assert.throws(() => build(ctx), { message });
+    }
+  }
+});

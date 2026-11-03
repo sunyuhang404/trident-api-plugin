@@ -390,7 +390,7 @@ export const meta = {
     en: "Tripo 3D generation through the Tripo OpenAPI v3",
     zh: "通过 Tripo OpenAPI v3 生成三维模型",
   },
-  version: "1.0.6",
+  version: "1.0.7",
   author: { name: "sunyuhang404", url: "https://github.com/sunyuhang404/trident-api-plugin" },
   website: "https://github.com/sunyuhang404/trident-api-plugin",
   baseUrl: "https://openapi.tripo3d.com/v3",
@@ -577,10 +577,10 @@ function validateSubmitBody(body, action) {
 }
 
 function authorizationHeader(ctx) {
-  const header = trimmed(ctx.authHeader);
-  if (header) return header;
-  const key = trimmed(ctx.apiKey);
+  const value = trimmed(ctx.authHeader) || trimmed(ctx.apiKey);
+  const key = value.replace(/^Bearer(?:\s+|$)/i, "").trim();
   if (!key) throw new Error("A Tripo API key is required.");
+  if (/\s/.test(key)) throw new Error("The Tripo API key format is invalid.");
   return "Bearer " + key;
 }
 

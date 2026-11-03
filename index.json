@@ -20,13 +20,13 @@
         "P2-20260801"
       ],
       "baseUrl": "https://openapi.tripo3d.com/v3",
-      "latest": "1.0.6",
+      "latest": "1.0.7",
       "versions": [
         {
-          "version": "1.0.6",
+          "version": "1.0.7",
           "kind": "task",
           "path": "plugins/tasks/tripo/1.0.0/plugin.js",
-          "sha256": "451b4c10811ade282de96b9832a85e04eb91f3182be689890dfe628ee3a15dce",
+          "sha256": "19a772fbb8bc74b68dae000db688e87ce44e9b932813fb036665f7c1b0112408",
           "baseUrl": "https://openapi.tripo3d.com/v3",
           "allowedHosts": [
             "cdn.tripo3d.ai"
