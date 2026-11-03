@@ -314,26 +314,35 @@ const USAGE_EXAMPLES = [
   { label: "seedream image", facts: { task_type: "text-to-image", a_task: 0, b_texture: 0, c_texture_hd: 0, d_texture_8k: 0, e_p_series: 0, f_geometry: 0, g_quad: 0, h_low_poly: 0, i_parts: 0, j_convert: 0, k_animation: 0, l_edit: 0, m_img_01_seedream: 1, m_img_02_banana: 0, m_img_03_banana2: 0, m_img_04_banana2_4k: 0, m_img_05_pro: 0, m_img_06_pro_4k: 0, m_img_07_chat1: 0, m_img_08_chat15: 0, m_img_09_chat2: 0, m_img_10_chat2_4k: 0, m_img_11_chat2_high_1k: 0, m_img_12_chat2_high_2k: 0, m_img_13_chat2_high_4k: 0, m_img_14_chat25: 0, m_img_15_chat25_4k: 0, m_img_16_chat25_high_1k: 0, m_img_17_chat25_high_2k: 0, m_img_18_chat25_high_4k: 0, m_img_19_chat25_xhigh_1k: 0, m_img_20_chat25_xhigh_2k: 0, m_img_21_chat25_xhigh_4k: 0, m_img_22_chat25_max_1k: 0, m_img_23_chat25_max_2k: 0, m_img_24_chat25_max_4k: 0 } },
 ];
 
-// Text-to-3D models use their official identities for channel selection and pricing.
-const TEXT_TO_MODEL_MODELS = [
+// 3D generation models use their official identities for channel selection and pricing.
+const MODEL_GENERATION_MODELS = [
   "v3.1-20260211", "v3.0-20250812", "v2.5-20250123", "P1-20260311", "P2-20260801",
 ];
-const DEFAULT_TEXT_TO_MODEL_MODEL = "v3.1-20260211";
+const DEFAULT_MODEL_GENERATION_MODEL = "v3.1-20260211";
 
 // The two base-price columns are exclusive. Texture upgrades and other options
 // are additional quantities; currency prices remain in the host configuration.
 // Field prefixes follow the official table in the host's alphabetical editor.
-const TEXT_TO_MODEL_BASE_SCHEMA = {
+const MODEL_GENERATION_BASE_SCHEMA = {
+  task_type: {
+    enum: TEXTURED_ACTIONS,
+    enumLabels: {
+      "text-to-model": { en: "Text to 3D", zh: "文本生成3D" },
+      "image-to-model": { en: "Image to 3D", zh: "图片生成3D" },
+      "multiview-to-model": { en: "Multiview to 3D", zh: "多视图生成3D" },
+    },
+    description: { en: "3D generation method", zh: "3D生成方式" },
+  },
   a_untextured_model_count: {
     type: "number", unit: "count", unitLabel: { en: "model", zh: "个" },
-    description: { en: "Untextured text-to-3D unit price", zh: "无贴图文生3D单价" },
+    description: { en: "Untextured 3D generation unit price", zh: "无贴图3D生成单价" },
   },
   b_textured_model_count: {
     type: "number", unit: "count", unitLabel: { en: "model", zh: "个" },
-    description: { en: "Standard-textured text-to-3D unit price", zh: "标准贴图文生3D单价" },
+    description: { en: "Standard-textured 3D generation unit price", zh: "标准贴图3D生成单价" },
   },
 };
-const TEXT_TO_MODEL_TEXTURE_SCHEMA = Object.assign({}, TEXT_TO_MODEL_BASE_SCHEMA, {
+const MODEL_GENERATION_TEXTURE_SCHEMA = Object.assign({}, MODEL_GENERATION_BASE_SCHEMA, {
   c_hd_texture_count: {
     type: "number", unit: "count", unitLabel: { en: "option", zh: "项" },
     description: { en: "HD texture add-on unit price", zh: "高清贴图附加单价" },
@@ -343,13 +352,13 @@ const TEXT_TO_MODEL_TEXTURE_SCHEMA = Object.assign({}, TEXT_TO_MODEL_BASE_SCHEMA
     description: { en: "8K texture add-on unit price", zh: "8K贴图附加单价" },
   },
 });
-const TEXT_TO_MODEL_QUAD_SCHEMA = {
+const MODEL_GENERATION_QUAD_SCHEMA = {
   f_quad_count: {
     type: "number", unit: "count", unitLabel: { en: "option", zh: "项" },
     description: { en: "Quad mesh add-on unit price", zh: "四边面网格附加单价" },
   },
 };
-const H_TEXT_TO_MODEL_SCHEMA = Object.assign({}, TEXT_TO_MODEL_TEXTURE_SCHEMA, TEXT_TO_MODEL_QUAD_SCHEMA, {
+const H_MODEL_GENERATION_SCHEMA = Object.assign({}, MODEL_GENERATION_TEXTURE_SCHEMA, MODEL_GENERATION_QUAD_SCHEMA, {
   e_ultra_geometry_count: {
     type: "number", unit: "count", unitLabel: { en: "option", zh: "项" },
     description: { en: "Ultra geometry add-on unit price", zh: "超清几何精度附加单价" },
@@ -363,13 +372,13 @@ const H_TEXT_TO_MODEL_SCHEMA = Object.assign({}, TEXT_TO_MODEL_TEXTURE_SCHEMA, T
     description: { en: "Part generation add-on unit price", zh: "分部件生成附加单价" },
   },
 });
-const P2_TEXT_TO_MODEL_SCHEMA = Object.assign({}, TEXT_TO_MODEL_TEXTURE_SCHEMA, TEXT_TO_MODEL_QUAD_SCHEMA);
-const TEXT_TO_MODEL_SCHEMAS = {
-  "v3.1-20260211": H_TEXT_TO_MODEL_SCHEMA,
-  "v3.0-20250812": H_TEXT_TO_MODEL_SCHEMA,
-  "v2.5-20250123": TEXT_TO_MODEL_BASE_SCHEMA,
-  "P1-20260311": TEXT_TO_MODEL_TEXTURE_SCHEMA,
-  "P2-20260801": P2_TEXT_TO_MODEL_SCHEMA,
+const P2_MODEL_GENERATION_SCHEMA = Object.assign({}, MODEL_GENERATION_TEXTURE_SCHEMA, MODEL_GENERATION_QUAD_SCHEMA);
+const MODEL_GENERATION_SCHEMAS = {
+  "v3.1-20260211": H_MODEL_GENERATION_SCHEMA,
+  "v3.0-20250812": H_MODEL_GENERATION_SCHEMA,
+  "v2.5-20250123": MODEL_GENERATION_BASE_SCHEMA,
+  "P1-20260311": MODEL_GENERATION_TEXTURE_SCHEMA,
+  "P2-20260801": P2_MODEL_GENERATION_SCHEMA,
 };
 
 export const meta = {
@@ -381,7 +390,7 @@ export const meta = {
     en: "Tripo 3D generation through the Tripo OpenAPI v3",
     zh: "通过 Tripo OpenAPI v3 生成三维模型",
   },
-  version: "1.0.5",
+  version: "1.0.6",
   author: { name: "sunyuhang404", url: "https://github.com/sunyuhang404/trident-api-plugin" },
   website: "https://github.com/sunyuhang404/trident-api-plugin",
   baseUrl: "https://openapi.tripo3d.com/v3",
@@ -417,33 +426,41 @@ export const meta = {
   usageExamples: USAGE_EXAMPLES,
   usageProfiles: [
     {
-      models: ["v3.1-20260211", "v3.0-20250812"], schema: H_TEXT_TO_MODEL_SCHEMA,
+      models: ["v3.1-20260211", "v3.0-20250812"], schema: H_MODEL_GENERATION_SCHEMA,
       examples: [
-        { label: "No texture", facts: textToModelUsage({ texture: false, pbr: false }, "v3.1-20260211") },
-        { label: "Standard texture", facts: textToModelUsage({}, "v3.1-20260211") },
-        { label: "HD texture", facts: textToModelUsage({ texture_quality: "detailed" }, "v3.1-20260211") },
-        { label: "8K texture", facts: textToModelUsage({ texture_quality: "extreme" }, "v3.1-20260211") },
+        { label: "Text to 3D · No texture", facts: modelGenerationUsage({ texture: false, pbr: false }, "v3.1-20260211", "text-to-model") },
+        { label: "Text to 3D · Standard texture", facts: modelGenerationUsage({}, "v3.1-20260211", "text-to-model") },
+        { label: "Image to 3D · Standard texture", facts: modelGenerationUsage({}, "v3.1-20260211", "image-to-model") },
+        { label: "Multiview to 3D · Standard texture", facts: modelGenerationUsage({}, "v3.1-20260211", "multiview-to-model") },
+        { label: "Text to 3D · HD texture", facts: modelGenerationUsage({ texture_quality: "detailed" }, "v3.1-20260211", "text-to-model") },
+        { label: "Text to 3D · 8K texture", facts: modelGenerationUsage({ texture_quality: "extreme" }, "v3.1-20260211", "text-to-model") },
       ],
     },
     {
-      models: ["v2.5-20250123"], schema: TEXT_TO_MODEL_BASE_SCHEMA,
+      models: ["v2.5-20250123"], schema: MODEL_GENERATION_BASE_SCHEMA,
       examples: [
-        { label: "No texture", facts: textToModelUsage({ texture: false, pbr: false }, "v2.5-20250123") },
-        { label: "Standard texture", facts: textToModelUsage({}, "v2.5-20250123") },
+        { label: "Text to 3D · No texture", facts: modelGenerationUsage({ texture: false, pbr: false }, "v2.5-20250123", "text-to-model") },
+        { label: "Text to 3D · Standard texture", facts: modelGenerationUsage({}, "v2.5-20250123", "text-to-model") },
+        { label: "Image to 3D · Standard texture", facts: modelGenerationUsage({}, "v2.5-20250123", "image-to-model") },
+        { label: "Multiview to 3D · Standard texture", facts: modelGenerationUsage({}, "v2.5-20250123", "multiview-to-model") },
       ],
     },
     {
-      models: ["P1-20260311"], schema: TEXT_TO_MODEL_TEXTURE_SCHEMA,
+      models: ["P1-20260311"], schema: MODEL_GENERATION_TEXTURE_SCHEMA,
       examples: [
-        { label: "No texture", facts: textToModelUsage({ texture: false, pbr: false }, "P1-20260311") },
-        { label: "Standard texture", facts: textToModelUsage({}, "P1-20260311") },
+        { label: "Text to 3D · No texture", facts: modelGenerationUsage({ texture: false, pbr: false }, "P1-20260311", "text-to-model") },
+        { label: "Text to 3D · Standard texture", facts: modelGenerationUsage({}, "P1-20260311", "text-to-model") },
+        { label: "Image to 3D · Standard texture", facts: modelGenerationUsage({}, "P1-20260311", "image-to-model") },
+        { label: "Multiview to 3D · Standard texture", facts: modelGenerationUsage({}, "P1-20260311", "multiview-to-model") },
       ],
     },
     {
-      models: ["P2-20260801"], schema: P2_TEXT_TO_MODEL_SCHEMA,
+      models: ["P2-20260801"], schema: P2_MODEL_GENERATION_SCHEMA,
       examples: [
-        { label: "No texture", facts: textToModelUsage({ texture: false, pbr: false }, "P2-20260801") },
-        { label: "Standard texture", facts: textToModelUsage({}, "P2-20260801") },
+        { label: "Text to 3D · No texture", facts: modelGenerationUsage({ texture: false, pbr: false }, "P2-20260801", "text-to-model") },
+        { label: "Text to 3D · Standard texture", facts: modelGenerationUsage({}, "P2-20260801", "text-to-model") },
+        { label: "Image to 3D · Standard texture", facts: modelGenerationUsage({}, "P2-20260801", "image-to-model") },
+        { label: "Multiview to 3D · Standard texture", facts: modelGenerationUsage({}, "P2-20260801", "multiview-to-model") },
       ],
     },
   ],
@@ -527,9 +544,10 @@ function originTaskIds(body) {
 function validateSubmitBody(body, action) {
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("A JSON object body is required.");
   if (TASK_TYPES.indexOf(action) < 0) throw new Error("This task path is not supported.");
-  if (action === "text-to-model") {
-    const model = body.model === undefined ? DEFAULT_TEXT_TO_MODEL_MODEL : body.model;
-    if (TEXT_TO_MODEL_MODELS.indexOf(model) < 0) throw new Error("This text-to-3D model is not supported.");
+  if (TEXTURED_ACTIONS.indexOf(action) >= 0) {
+    if (action !== "text-to-model" && body.model === undefined) throw new Error("A 3D generation model is required.");
+    const model = body.model === undefined ? DEFAULT_MODEL_GENERATION_MODEL : body.model;
+    if (MODEL_GENERATION_MODELS.indexOf(model) < 0) throw new Error("This 3D generation model is not supported.");
     for (const key of ["texture", "pbr", "quad", "smart_low_poly", "generate_parts"]) {
       if (body[key] !== undefined && typeof body[key] !== "boolean") throw new Error(key + " must be a boolean.");
     }
@@ -600,12 +618,14 @@ function textureEnabled(body, action) {
   return record.texture !== false;
 }
 
-function textToModelUsage(body, model) {
+function modelGenerationUsage(body, model, action) {
   const record = Object.assign({}, body, { model: model });
-  const schema = TEXT_TO_MODEL_SCHEMAS[model];
-  const facts = {};
-  for (const key of Object.keys(schema)) facts[key] = 0;
-  const textured = textureEnabled(record, "text-to-model");
+  const schema = MODEL_GENERATION_SCHEMAS[model];
+  const facts = { task_type: action };
+  for (const key of Object.keys(schema)) {
+    if (key !== "task_type") facts[key] = 0;
+  }
+  const textured = textureEnabled(record, action);
   facts[textured ? "b_textured_model_count" : "a_untextured_model_count"] = 1;
   if (schema.c_hd_texture_count && textured && record.texture_quality === "detailed") facts.c_hd_texture_count = 1;
   if (schema.d_texture_8k_count && textured && record.texture_quality === "extreme") facts.d_texture_8k_count = 1;
@@ -735,10 +755,10 @@ function convertAdvanced(body) {
 // Reported facts select a price cell. Amounts stay in the console.
 function usageFacts(body, action, model) {
   const record = objectRecord(body);
-  if (action === "text-to-model" && model !== "tripo") {
-    const version = model || (record.model === undefined ? DEFAULT_TEXT_TO_MODEL_MODEL : record.model);
+  if (TEXTURED_ACTIONS.indexOf(action) >= 0 && model !== "tripo") {
+    const version = model || (record.model === undefined ? DEFAULT_MODEL_GENERATION_MODEL : record.model);
     validateSubmitBody(Object.assign({}, record, { model: version }), action);
-    return textToModelUsage(record, version);
+    return modelGenerationUsage(record, version, action);
   }
   let taskType = action;
   if (action === "smartsegment") taskType = trimmed(record.seg_type) === "model" ? "smartsegment-model" : "smartsegment-image";
@@ -815,14 +835,14 @@ export const native = {
     if (!ctx.body || ctx.body.kind !== "json") throw new Error("A JSON body is required.");
     const action = actionFromPath(ctx.path);
     validateSubmitBody(ctx.body.value, action);
-    const model = action === "text-to-model"
-      ? (ctx.body.value.model === undefined ? DEFAULT_TEXT_TO_MODEL_MODEL : ctx.body.value.model)
+    const model = TEXTURED_ACTIONS.indexOf(action) >= 0
+      ? (ctx.body.value.model === undefined ? DEFAULT_MODEL_GENERATION_MODEL : ctx.body.value.model)
       : "tripo";
     return {
       kind: "submit",
       model: model,
       action: action,
-      requestBody: action === "text-to-model" ? Object.assign({}, ctx.body.value, { model: model }) : ctx.body.value,
+      requestBody: TEXTURED_ACTIONS.indexOf(action) >= 0 ? Object.assign({}, ctx.body.value, { model: model }) : ctx.body.value,
       originTaskIds: originTaskIds(ctx.body.value),
     };
   },
@@ -845,7 +865,7 @@ export const native = {
 export function buildSubmitRequest(ctx) {
   const action = trimmed(ctx.action) || actionFromPath(ctx.action);
   const body = withUpstreamTaskIds(ctx.requestBody, ctx.originTasks);
-  if (action === "text-to-model") body.model = ctx.upstreamModel || ctx.model || body.model || DEFAULT_TEXT_TO_MODEL_MODEL;
+  if (TEXTURED_ACTIONS.indexOf(action) >= 0) body.model = ctx.upstreamModel || ctx.model || body.model || DEFAULT_MODEL_GENERATION_MODEL;
   validateSubmitBody(body, action);
   return {
     url: upstreamURL(ctx, ENDPOINT_SUFFIX[action]),
@@ -899,12 +919,17 @@ export function parseTaskResult(ctx, body) {
   return result;
 }
 
-function completionFacts(state, model) {
-  const schema = TEXT_TO_MODEL_SCHEMAS[model];
+function completionFacts(state, model, action) {
+  const schema = MODEL_GENERATION_SCHEMAS[model];
   if (schema) {
     if (!state || typeof state !== "object" || Array.isArray(state)) return null;
-    const facts = {};
+    // Version 1.0.5 stored only numeric text-to-3D facts. Its frozen expression
+    // remains valid; missing task_type belongs only to those text tasks.
+    const taskType = state.task_type === undefined ? "text-to-model" : state.task_type;
+    if (taskType !== action || TEXTURED_ACTIONS.indexOf(taskType) < 0) return null;
+    const facts = { task_type: taskType };
     for (const key of Object.keys(schema)) {
+      if (key === "task_type") continue;
       const value = state[key];
       if (typeof value !== "number" || (value !== 0 && value !== 1)) return null;
       facts[key] = value;
@@ -929,7 +954,7 @@ export function extractUsageOnComplete(task, result) {
   if (!result || result.status !== "SUCCESS") return null;
   const taskType = trimmed(task && task.action);
   if (TASK_TYPES.indexOf(taskType) < 0) return null;
-  return completionFacts(task && task.state, taskType === "text-to-model" ? (task.upstreamModel || task.model) : "tripo");
+  return completionFacts(task && task.state, TEXTURED_ACTIONS.indexOf(taskType) >= 0 ? (task.upstreamModel || task.model) : "tripo", taskType);
 }
 
 export function listArtifacts(task) {
