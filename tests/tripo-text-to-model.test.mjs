@@ -301,3 +301,50 @@ test('missing or malformed credentials fail without including their value in err
     }
   }
 });
+
+
+test('completed model tasks list and download all three outputs with URL fields or compatible aliases', () => {
+  for (const suffix of ['_url', '']) {
+    const data = { code: 0, data: { output: {
+      ['model' + suffix]: 'https://cdn.example/model.glb',
+      ['rendered_image' + suffix]: 'https://cdn.example/render.png',
+      ['generated_image' + suffix]: 'https://cdn.example/generated.jpeg',
+    } } };
+    const before = structuredClone(data);
+    assert.deepEqual(plugin.listArtifacts({ status: 'SUCCESS', data }), [
+      { key: 'model', type: 'file' },
+      { key: 'rendered_image', type: 'image' },
+      { key: 'generated_image', type: 'image' },
+    ]);
+    for (const method of ['GET', 'HEAD']) {
+      for (const key of ['model', 'rendered_image', 'generated_image']) {
+        assert.deepEqual(plugin.buildContentRequest({ data, artifactKey: key, clientRequest: { method } }), {
+          url: data.data.output[key + suffix], method, credentialless: true,
+        });
+      }
+    }
+    assert.deepEqual(data, before);
+  }
+});
+
+test('generated image URL takes precedence and falls back to its compatible alias', () => {
+  for (const [value, expected] of [
+    ['https://cdn.example/primary.png', 'https://cdn.example/primary.png'],
+    ['', 'https://cdn.example/fallback.png'],
+    ['invalid', 'https://cdn.example/fallback.png'],
+  ]) {
+    const data = { data: { output: { generated_image_url: value, generated_image: 'https://cdn.example/fallback.png' } } };
+    assert.deepEqual(plugin.listArtifacts({ status: 'SUCCESS', data }), [{ key: 'generated_image', type: 'image' }]);
+    assert.equal(plugin.buildContentRequest({ data, artifactKey: 'generated_image', clientRequest: { method: 'GET' } }).url, expected);
+  }
+});
+
+test('missing or invalid generated images preserve existing artifacts and cannot be downloaded', () => {
+  for (const value of [undefined, null, '', 'invalid', 'javascript:alert(1)', { url: 'https://cdn.example/nested.png' }]) {
+    const data = { data: { output: { model_url: 'https://cdn.example/model.glb', rendered_image_url: 'https://cdn.example/render.png', generated_image_url: value } } };
+    assert.deepEqual(plugin.listArtifacts({ status: 'SUCCESS', data }), [{ key: 'model', type: 'file' }, { key: 'rendered_image', type: 'image' }]);
+    assert.throws(() => plugin.buildContentRequest({ data, artifactKey: 'generated_image', clientRequest: { method: 'GET' } }), /requested artifact is not available/);
+  }
+  assert.deepEqual(plugin.listArtifacts({ status: 'SUCCESS', data: { data: { output: {} } } }), []);
+  assert.deepEqual(plugin.listArtifacts({ status: 'IN_PROGRESS', data: { data: { output: { generated_image_url: 'https://cdn.example/generated.png' } } } }), []);
+});

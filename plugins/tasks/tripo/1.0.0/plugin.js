@@ -390,7 +390,7 @@ export const meta = {
     en: "Tripo 3D generation through the Tripo OpenAPI v3",
     zh: "通过 Tripo OpenAPI v3 生成三维模型",
   },
-  version: "1.0.7",
+  version: "1.0.8",
   author: { name: "sunyuhang404", url: "https://github.com/sunyuhang404/trident-api-plugin" },
   website: "https://github.com/sunyuhang404/trident-api-plugin",
   baseUrl: "https://openapi.tripo3d.com/v3",
@@ -965,6 +965,7 @@ export function listArtifacts(task) {
     if (outputURL(output, pair[0], pair[1])) artifacts.push({ key: pair[0], type: "file" });
   }
   if (outputURL(output, "rendered_image", "rendered_image_url")) artifacts.push({ key: "rendered_image", type: "image" });
+  if (outputURL(output, "generated_image", "generated_image_url")) artifacts.push({ key: "generated_image", type: "image" });
   return artifacts;
 }
 
@@ -975,6 +976,7 @@ export function buildContentRequest(ctx) {
     if (ctx.artifactKey === pair[0]) url = outputURL(output, pair[0], pair[1]);
   }
   if (ctx.artifactKey === "rendered_image") url = outputURL(output, "rendered_image", "rendered_image_url");
+  if (ctx.artifactKey === "generated_image") url = outputURL(output, "generated_image", "generated_image_url");
   if (!url) throw new Error("The requested artifact is not available.");
   return { url: url, method: ctx.clientRequest.method, credentialless: true };
 }
