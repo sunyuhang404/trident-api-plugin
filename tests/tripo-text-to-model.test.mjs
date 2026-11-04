@@ -486,3 +486,168 @@ test('encoded public parent IDs round-trip while ordinary task, URL and file-tok
     assert.equal(request.body.input, input === 'gateway_parent' ? 'upstream_parent' : input);
   }
 });
+
+test('postprocessing exposes segmented models, masks and UV previews through the artifact download contract', () => {
+  for (const [output, expected] of [
+    [{ seg_model_url: 'https://cdn.tripo3d.ai/segment.glb', mask_url: 'https://cdn.tripo3d.ai/mask.png' }, [{ key: 'seg_model', type: 'file' }, { key: 'mask', type: 'image' }]],
+    [{ model_url: 'https://cdn.tripo3d.ai/model.glb', uv_render_url: 'https://cdn.tripo3d.ai/uv.webp' }, [{ key: 'model', type: 'file' }, { key: 'uv_render', type: 'image' }]],
+  ]) {
+    const data = { code: 0, data: { task_id: 'fixture', status: 'success', output } };
+    const before = structuredClone(data);
+    assert.deepEqual(plugin.listArtifacts({ status: 'SUCCESS', data }), expected);
+    for (const artifact of expected) for (const method of ['GET', 'HEAD']) {
+      assert.deepEqual(plugin.buildContentRequest({ data, artifactKey: artifact.key, clientRequest: { method } }), {
+        url: output[artifact.key + '_url'], method, credentialless: true,
+      });
+    }
+    assert.deepEqual(data, before);
+    assert.deepEqual(plugin.listArtifacts({ status: 'IN_PROGRESS', data }), []);
+  }
+  const data = { code: 0, data: { status: 'success', output: { seg_model_url: 'https://cdn.tripo3d.ai/segment.glb' } } };
+  assert.equal(plugin.parseTaskResult({}, data).url, data.data.output.seg_model_url);
+  for (const field of ['seg_model', 'mask', 'uv_render']) for (const value of [null, '', 'invalid', 'javascript:alert(1)', { url: 'https://example.com/file' }]) {
+    const data = { code: 0, data: { output: { [field + '_url']: value } } };
+    assert.deepEqual(plugin.listArtifacts({ status: 'SUCCESS', data }), []);
+    assert.throws(() => plugin.buildContentRequest({ data, artifactKey: field, clientRequest: { method: 'GET' } }), /artifact is not available/);
+  }
+});
+
+function uploadContext(action = 'file-upload', options = {}) {
+  return { model: 'tripo', upstreamModel: 'tripo', action, publicTaskId: 'gateway_upload', baseUrl: 'https://provider.example/v3', apiKey: 'fixture', requestBody: {}, ...options };
+}
+
+test('multipart uploads forward the opaque file through the selected channel and return reusable owned references', () => {
+  for (const filename of ['reference.PNG', 'model.glb']) for (const kind of ['vendor', 'new_api']) {
+    const file = { ref: 'request_file:file', field: 'file', filename, size: 123, mimeType: 'application/octet-stream' };
+    const body = { kind: 'multipart', fields: {}, files: [file] };
+    const before = structuredClone(body);
+    const intent = plugin.native.decodeFileUpload({ body });
+    const ctx = uploadContext('file-upload', { files: [file], requestBody: intent.requestBody, upstream: { kind } });
+    const request = plugin.buildSubmitRequest(ctx);
+    assert.equal(intent.model, 'tripo');
+    assert.equal(request.url, 'https://provider.example/v3' + (kind === 'new_api' ? '/tripo/v3' : '') + '/files');
+    assert.equal(request.bodyType, 'multipart');
+    assert.deepEqual(request.parts, [{ name: 'file', fileRef: file.ref, filename: 'upload.' + filename.split('.').at(-1).toLowerCase() }]);
+    assert.equal(request.headers['Content-Type'], undefined);
+    assert.equal(request.headers.Authorization, 'Bearer fixture');
+    const parsed = plugin.parseSubmitResponse(ctx, { body: { code: 0, data: { file_token: 'file_vendor' } } });
+    assert.equal(parsed.immediate.status, 'SUCCESS');
+    const task = { task_id: ctx.publicTaskId, status: 'SUCCESS', data: parsed.taskData };
+    const response = plugin.native.taskCreated({}, task);
+    assert.equal(response.data.file_token, 'tripo-file:gateway_upload');
+    assert.equal(plugin.native.taskStatus({}, task).data.file_token, response.data.file_token);
+    const next = decode({ model: versions[0], input: response.data.file_token }, 'generation/image-to-model');
+    assert.deepEqual(next.originTaskIds, ['gateway_upload']);
+    const upstream = plugin.buildSubmitRequest(uploadContext(next.action, { model: next.model, upstreamModel: next.model, requestBody: next.requestBody,
+      originTasks: [{ taskId: task.task_id, action: intent.action, status: 'SUCCESS', data: task.data }] }));
+    assert.equal(upstream.body.input, 'file_vendor');
+    assert.deepEqual(body, before);
+  }
+});
+
+test('presigned uploads retain the upload URL and expiry while binding the file token to a gateway task', () => {
+  const intent = plugin.native.decodeFilePresign({ body: { kind: 'json', value: { format: 'GLB' } } });
+  const ctx = uploadContext(intent.action, { requestBody: intent.requestBody });
+  assert.deepEqual(plugin.buildSubmitRequest(ctx).body, { format: 'glb' });
+  assert.equal(plugin.buildSubmitRequest(ctx).url, 'https://provider.example/v3/files/presign');
+  const data = { file_token: 'file_presigned', presigned_url: 'https://storage.example/upload?signature=fixture', expires_in: 1800 };
+  const parsed = plugin.parseSubmitResponse(ctx, { body: { code: 0, data } });
+  const response = plugin.native.taskCreated({}, { task_id: 'gateway_presign', status: 'SUCCESS', data: parsed.taskData });
+  assert.equal(response.data.file_token, 'tripo-file:gateway_presign');
+  assert.equal(response.data.presigned_url, data.presigned_url);
+  assert.equal(response.data.expires_in, 1800);
+  const body = { input: response.data.file_token };
+  const intent2 = decode(body, 'models/import');
+  assert.deepEqual(intent2.originTaskIds, ['gateway_presign']);
+  const request = plugin.buildSubmitRequest(uploadContext(intent2.action, { requestBody: body,
+    originTasks: [{ taskId: 'gateway_presign', action: 'file-presign', status: 'SUCCESS', data: parsed.taskData }] }));
+  assert.equal(request.body.input, 'file_presigned');
+});
+
+test('upload requests reject missing, unsupported and oversized files before upstream submission', () => {
+  const file = { ref: 'request_file:file', field: 'file', filename: 'image.png', size: 1, mimeType: 'image/png' };
+  for (const body of [{ kind: 'json', value: {} }, { kind: 'multipart', files: [] }, { kind: 'multipart', files: [file, file] }]) {
+    assert.throws(() => plugin.native.decodeFileUpload({ body }), /Exactly one/);
+  }
+  for (const change of [{ field: 'other' }, { filename: 'image.png.exe' }, { filename: 'image.png:stream' }, { filename: 'image\u0000.png' }, { size: 0 }, { size: -1 }, { size: 1.5 }, { size: 20 * 1024 * 1024 + 1 }, { filename: 'model.glb', size: 150 * 1024 * 1024 + 1 }]) {
+    const candidate = { ...file, ...change };
+    assert.throws(() => plugin.native.decodeFileUpload({ body: { kind: 'multipart', files: [candidate] } }));
+    assert.throws(() => plugin.buildSubmitRequest(uploadContext('file-upload', { requestBody: { fileRef: file.ref }, files: [candidate] })));
+  }
+  for (const [filename, size] of [['image.jpg', 20 * 1024 * 1024], ['model.glb', 150 * 1024 * 1024]]) {
+    assert.equal(plugin.native.decodeFileUpload({ body: { kind: 'multipart', files: [{ ...file, filename, size }] } }).action, 'file-upload');
+  }
+  assert.throws(() => plugin.buildSubmitRequest(uploadContext('file-upload', { requestBody: { fileRef: 'forged' }, files: [file] })), /file field/);
+  for (const value of [null, {}, { format: 'exe' }, { format: '.glb' }, { format: 2 }]) {
+    assert.throws(() => plugin.native.decodeFilePresign({ body: { kind: 'json', value } }), /format is not supported/);
+  }
+});
+
+test('upload failures and malformed upstream tokens or presigned URLs cannot become successful file references', () => {
+  for (const action of ['file-upload', 'file-presign']) {
+    assert.throws(() => plugin.parseSubmitResponse(uploadContext(action), { body: { code: 1004, message: 'invalid file' } }), /invalid file/);
+    for (const file_token of [undefined, '', 123, {}, 'invalid', 'tripo-file:%']) {
+      assert.throws(() => plugin.parseSubmitResponse(uploadContext(action), { body: { code: 0, data: { file_token } } }));
+    }
+  }
+  for (const change of [{ presigned_url: 'http://storage.example/file' }, { presigned_url: 'javascript:alert(1)' }, { expires_in: 0 }, { expires_in: '1800' }]) {
+    assert.throws(() => plugin.parseSubmitResponse(uploadContext('file-presign'), { body: { code: 0, data: { file_token: 'file_vendor', presigned_url: 'https://storage.example/file', expires_in: 1800, ...change } } }), /valid upload URL/);
+  }
+});
+
+test('file references bind nested reference images and multiview inputs without interpreting prompt text', () => {
+  const reference = 'tripo-file:gateway_upload';
+  const raw = { code: 0, data: { file_token: 'file_vendor' } };
+  const origin = { taskId: 'gateway_upload', action: 'file-upload', status: 'SUCCESS', data: raw };
+  const cases = [
+    ['generation/multiview-to-model', { model: versions[0], inputs: [{ front: reference }, { left: { file_token: reference } }] }],
+    ['generation/multiview-to-model', { model: versions[0], inputs: [reference, reference, '', ''] }],
+    ['models/texture', { input: 'https://example.com/model.glb', texture_prompt: { image: { file_token: reference } } }],
+    ['models/texture', { input: 'https://example.com/model.glb', texture_prompt: { text: reference, style_image: { file_token: reference } } }],
+    ['mesh/segment', { input: 'https://example.com/model.glb', ref_image: reference }],
+  ];
+  for (const [suffix, body] of cases) {
+    const before = structuredClone(body);
+    const intent = decode(body, suffix);
+    assert.deepEqual(intent.originTaskIds, ['gateway_upload']);
+    const request = plugin.buildSubmitRequest(uploadContext(intent.action, { model: intent.model, upstreamModel: intent.model, requestBody: intent.requestBody, originTasks: [origin] }));
+    const expected = JSON.parse(JSON.stringify(body).replaceAll(reference, 'file_vendor'));
+    if (expected.texture_prompt?.text) expected.texture_prompt.text = reference;
+    assert.deepEqual(request.body, expected);
+    assert.deepEqual(body, before);
+  }
+  assert.deepEqual(decode({ prompt: reference }, 'generation/text-to-model').originTaskIds, []);
+});
+
+test('file references reject unknown owners, wrong task types, unavailable uploads and malformed reference IDs', () => {
+  const origin = { taskId: 'gateway_upload', action: 'file-upload', status: 'SUCCESS', data: { code: 0, data: { file_token: 'file_vendor' } } };
+  for (const origins of [[], [{ ...origin, taskId: 'someone_else' }], [{ ...origin, action: 'text-to-model' }], [{ ...origin, status: 'FAILURE' }], [{ ...origin, data: null }]]) {
+    assert.throws(() => plugin.buildSubmitRequest(uploadContext('import', { requestBody: { input: 'tripo-file:gateway_upload' }, originTasks: origins })), /uploaded file is not available/);
+  }
+  for (const reference of ['tripo-file:', 'tripo-file:%', 'tripo-file:%20parent', 'tripo-file:%70arent', 'tripo-file:' + 'a'.repeat(129)]) {
+    assert.throws(() => decode({ input: reference }, 'models/import'), /file reference is invalid/);
+  }
+});
+
+test('file references compose through upstream new-api gateways and retain zero generation quantities at settlement', () => {
+  for (const action of ['file-upload', 'file-presign']) {
+    const ctx = uploadContext(action);
+    const facts = plugin.extractUsage(ctx);
+    assert.equal(facts.task_type, action);
+    assert.equal(Object.entries(facts).filter(([key]) => key !== 'task_type').every(([, value]) => value === 0), true);
+    const data = { file_token: 'file_vendor', ...(action === 'file-presign' ? { presigned_url: 'https://storage.example/file', expires_in: 1800 } : {}) };
+    const parsed = plugin.parseSubmitResponse(ctx, { body: { code: 0, data } });
+    assert.deepEqual(plugin.extractUsageOnComplete({ model: 'tripo', action, state: parsed.state }, parsed.immediate), facts);
+    assert.equal(plugin.extractUsageOnComplete({ model: 'tripo', action, state: parsed.state }, { status: 'FAILURE' }), null);
+    const upstream = plugin.native.taskCreated({}, { task_id: 'upstream_upload', status: 'SUCCESS', data: parsed.taskData });
+    const downstreamParsed = plugin.parseSubmitResponse(ctx, { body: upstream });
+    const downstream = plugin.native.taskCreated({}, { task_id: 'downstream_upload', status: 'SUCCESS', data: downstreamParsed.taskData });
+    const intent = decode({ input: downstream.data.file_token }, 'models/import');
+    assert.deepEqual(intent.originTaskIds, ['downstream_upload']);
+    const request = plugin.buildSubmitRequest(uploadContext(intent.action, { requestBody: intent.requestBody, upstream: { kind: 'new_api' },
+      originTasks: [{ taskId: 'downstream_upload', action, status: 'SUCCESS', data: downstreamParsed.taskData }] }));
+    assert.equal(request.body.input, 'tripo-file:upstream_upload');
+    const next = decode(request.body, 'models/import');
+    assert.deepEqual(next.originTaskIds, ['upstream_upload']);
+  }
+});

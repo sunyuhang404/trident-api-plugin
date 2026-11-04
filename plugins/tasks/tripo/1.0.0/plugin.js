@@ -24,6 +24,8 @@ const TASK_TYPES = [
   "rig-check",
   "rig",
   "retarget",
+  "file-upload",
+  "file-presign",
 ];
 
 // These three requests accept texture. Tripo defaults both texture and pbr to
@@ -56,6 +58,8 @@ const BILLING_TYPES = [
   "rig-check",
   "rig",
   "retarget",
+  "file-upload",
+  "file-presign",
 ];
 
 const BILLING_LABELS = {
@@ -83,13 +87,15 @@ const BILLING_LABELS = {
   "rig-check": { en: "Rig check", zh: "绑骨检查" },
   "rig": { en: "Rig model", zh: "绑定骨骼" },
   "retarget": { en: "Retarget animation", zh: "重定向动画" },
+  "file-upload": { en: "Upload file", zh: "上传文件" },
+  "file-presign": { en: "Request upload URL", zh: "申请上传地址" },
 };
 
 const USAGE_SCHEMA = {
   task_type: {
     enum: BILLING_TYPES,
     enumLabels: BILLING_LABELS,
-    description: { en: "Generation task type", zh: "生成任务类型" },
+    description: { en: "Task type", zh: "任务类型" },
   },
   a_task: {
     type: "number",
@@ -390,7 +396,7 @@ export const meta = {
     en: "Tripo 3D generation through the Tripo OpenAPI v3",
     zh: "通过 Tripo OpenAPI v3 生成三维模型",
   },
-  version: "1.0.9",
+  version: "1.0.11",
   author: { name: "sunyuhang404", url: "https://github.com/sunyuhang404/trident-api-plugin" },
   website: "https://github.com/sunyuhang404/trident-api-plugin",
   baseUrl: "https://openapi.tripo3d.com/v3",
@@ -400,6 +406,8 @@ export const meta = {
   auth: "api_key",
   upstreams: ["vendor", "new_api"],
   routes: [
+    { method: "POST", path: "/tripo/v3/files", type: "submit", action: "file-upload", decode: "decodeFileUpload", render: "taskCreated" },
+    { method: "POST", path: "/tripo/v3/files/presign", type: "submit", action: "file-presign", decode: "decodeFilePresign", render: "taskCreated" },
     { method: "POST", path: "/tripo/v3/generation/text-to-model", type: "submit", action: "text-to-model", decode: "decodeSubmit", render: "taskCreated" },
     { method: "POST", path: "/tripo/v3/generation/image-to-model", type: "submit", action: "image-to-model", decode: "decodeSubmit", render: "taskCreated" },
     { method: "POST", path: "/tripo/v3/generation/multiview-to-model", type: "submit", action: "multiview-to-model", decode: "decodeSubmit", render: "taskCreated" },
@@ -467,6 +475,8 @@ export const meta = {
 };
 
 const ENDPOINT_SUFFIX = {
+  "file-upload": "/files",
+  "file-presign": "/files/presign",
   "text-to-model": "/generation/text-to-model",
   "image-to-model": "/generation/image-to-model",
   "multiview-to-model": "/generation/multiview-to-model",
@@ -493,6 +503,13 @@ const OUTPUT_FILES = [
   ["model", "model_url"],
   ["base_model", "base_model_url"],
   ["pbr_model", "pbr_model_url"],
+  ["seg_model", "seg_model_url"],
+];
+const OUTPUT_IMAGES = [
+  ["rendered_image", "rendered_image_url"],
+  ["generated_image", "generated_image_url"],
+  ["mask", "mask_url"],
+  ["uv_render", "uv_render_url"],
 ];
 
 function trimmed(value) {
@@ -544,9 +561,62 @@ function parseChildTaskReference(value) {
 }
 
 function pushId(ids, value) {
-  const child = parseChildTaskReference(value);
+  const child = parseFileTaskReference(value) || parseChildTaskReference(value);
   const text = child ? child.taskId : trimmed(value);
   if (text && ids.indexOf(text) < 0) ids.push(text);
+}
+
+// Upload references use a persisted gateway task to retain ownership and channel.
+function parseFileTaskReference(value) {
+  const text = trimmed(value);
+  if (text.indexOf("tripo-file:") !== 0) return null;
+  const encoded = text.slice("tripo-file:".length);
+  let taskId;
+  try {
+    taskId = decodeURIComponent(encoded);
+  } catch (error) {
+    throw new Error("The uploaded file reference is invalid.");
+  }
+  if (!taskId || taskId !== taskId.trim() || taskId.length > 128 || encodeURIComponent(taskId) !== encoded) {
+    throw new Error("The uploaded file reference is invalid.");
+  }
+  return { taskId: taskId };
+}
+
+// Only file-bearing fields are interpreted; prompts and other text stay opaque.
+function visitFileReferences(value, visit, referenceArray) {
+  if (!value || typeof value !== "object") return;
+  const fields = ["input", "inputs", "ref_image", "image", "images", "style_image", "file_token", "front", "left", "back", "right"];
+  for (const key of Object.keys(value)) {
+    const item = value[key];
+    const reference = Array.isArray(value) ? referenceArray : fields.indexOf(key) >= 0;
+    if (reference && typeof item === "string" && trimmed(item).indexOf("tripo-file:") === 0) visit(value, key);
+    else if (item && typeof item === "object") visitFileReferences(item, visit, reference);
+  }
+}
+
+function isUploadedFileToken(value) {
+  if (typeof value !== "string") return false;
+  return /^file_[^\s]+$/.test(trimmed(value)) || parseFileTaskReference(value) !== null;
+}
+
+function uploadFormat(body) {
+  const format = body && typeof body.format === "string" ? body.format.toLowerCase() : "";
+  if (["jpeg", "jpg", "png", "webp", "bmp", "tiff", "glb", "gltf", "fbx", "obj", "stl", "3mf", "usdz"].indexOf(format) < 0) throw new Error("The upload file format is not supported.");
+  return format;
+}
+
+function validateUploadFile(file) {
+  if (!file || file.field !== "file" || typeof file.ref !== "string" || !file.ref) throw new Error("Exactly one file field is required.");
+  const filename = typeof file.filename === "string" ? file.filename : "";
+  const match = filename.match(/\.([A-Za-z0-9]+)$/);
+  if (!match || /[\x00-\x1f:]/.test(filename)) throw new Error("The upload file format is not supported.");
+  const format = match[1].toLowerCase();
+  const image = format === "jpeg" || format === "jpg" || format === "png";
+  if (!image && ["glb", "gltf", "fbx", "obj", "stl"].indexOf(format) < 0) throw new Error("The upload file format is not supported.");
+  const limit = (image ? 20 : 150) * 1024 * 1024;
+  if (!Number.isInteger(file.size) || file.size <= 0 || file.size > limit) throw new Error(image ? "The image must be between 1 byte and 20 MB." : "The model must be between 1 byte and 150 MB.");
+  return "upload." + format;
 }
 
 function originTaskIds(body) {
@@ -558,6 +628,7 @@ function originTaskIds(body) {
       if (item && typeof item === "object" && !Array.isArray(item)) pushId(ids, item.task_id);
     }
   }
+  visitFileReferences(body, function (container, key) { pushId(ids, container[key]); });
   return ids;
 }
 
@@ -612,10 +683,17 @@ function upstreamURL(ctx, suffix, taskId) {
 }
 
 function resolveTaskReference(value, originTasks) {
-  const child = parseChildTaskReference(value);
+  const file = parseFileTaskReference(value);
+  const child = file || parseChildTaskReference(value);
   const publicId = child ? child.taskId : trimmed(value);
   const task = (originTasks || []).find(function (item) { return item && trimmed(item.taskId) === publicId; });
   if (!child) return task && trimmed(task.upstreamTaskId) ? trimmed(task.upstreamTaskId) : value;
+  if (file) {
+    if (!task || task.status !== "SUCCESS" || (task.action !== "file-upload" && task.action !== "file-presign")) throw new Error("The uploaded file is not available.");
+    const token = taskEnvelope(task.data).data.file_token;
+    if (!isUploadedFileToken(token)) throw new Error("The uploaded file is not available.");
+    return trimmed(token);
+  }
   if (!task || task.action !== "smartsegment" || task.status !== "SUCCESS") {
     throw new Error("The smart segmentation child task is not available.");
   }
@@ -638,6 +716,11 @@ function withUpstreamTaskIds(body, originTasks) {
       if (trimmed(item.task_id)) item.task_id = resolveTaskReference(item.task_id, originTasks);
     }
   }
+  visitFileReferences(next, function (container, key) {
+    // The top-level input has already been resolved; an upstream gateway's
+    // reference must reach that gateway unchanged rather than resolve twice.
+    if (container !== next || key !== "input") container[key] = resolveTaskReference(container[key], originTasks);
+  });
   return next;
 }
 
@@ -798,6 +881,9 @@ function usageFacts(body, action, model) {
     taskType = model.indexOf("v3") === 0 ? "decimate-v3" : model.indexOf("v1") === 0 ? "decimate-v1" : "decimate-v2";
   }
   const facts = emptyFacts(taskType);
+  // Uploads report no generation quantities. The saved host expression remains
+  // authoritative, including any administrator-configured constant charge.
+  if (action === "file-upload" || action === "file-presign") return facts;
   if (action === "text-to-image" || action === "image-to-image") {
     const flag = imageFlag(record);
     if (flag) facts[flag] = 1;
@@ -871,10 +957,23 @@ function publicTaskData(task) {
     }
     data.output = output;
   }
+  if (task.status === "SUCCESS" && (data.type === "file_upload" || data.type === "file_presign")) {
+    data.file_token = "tripo-file:" + encodeURIComponent(task.task_id);
+  }
   return data;
 }
 
 export const native = {
+  decodeFileUpload: function (ctx) {
+    if (!ctx.body || ctx.body.kind !== "multipart" || !Array.isArray(ctx.body.files) || ctx.body.files.length !== 1) throw new Error("Exactly one multipart file field is required.");
+    const file = ctx.body.files[0];
+    return { kind: "submit", model: "tripo", action: "file-upload", requestBody: { fileRef: file.ref, filename: validateUploadFile(file) } };
+  },
+  decodeFilePresign: function (ctx) {
+    if (!ctx.body || ctx.body.kind !== "json") throw new Error("A JSON body is required.");
+    const body = ctx.body.value;
+    return { kind: "submit", model: "tripo", action: "file-presign", requestBody: { format: uploadFormat(body) } };
+  },
   decodeSubmit: function (ctx) {
     if (!ctx.body || ctx.body.kind !== "json") throw new Error("A JSON body is required.");
     const action = actionFromPath(ctx.path);
@@ -907,7 +1006,14 @@ export const native = {
 
 export function buildSubmitRequest(ctx) {
   const action = trimmed(ctx.action) || actionFromPath(ctx.action);
+  if (action === "file-upload") {
+    const fileRef = ctx.requestBody && ctx.requestBody.fileRef;
+    const file = (ctx.files || []).find(function (item) { return item.ref === fileRef; });
+    return { url: upstreamURL(ctx, "/files"), method: "POST", headers: { Accept: "application/json", Authorization: authorizationHeader(ctx) },
+      bodyType: "multipart", parts: [{ name: "file", fileRef: fileRef, filename: validateUploadFile(file) }], action: action };
+  }
   const body = withUpstreamTaskIds(ctx.requestBody, ctx.originTasks);
+  if (action === "file-presign") body.format = uploadFormat(body);
   if (TEXTURED_ACTIONS.indexOf(action) >= 0) body.model = ctx.upstreamModel || ctx.model || body.model || DEFAULT_MODEL_GENERATION_MODEL;
   validateSubmitBody(body, action);
   return {
@@ -922,6 +1028,14 @@ export function buildSubmitRequest(ctx) {
 export function parseSubmitResponse(ctx, response) {
   const envelope = taskEnvelope(response && response.body);
   if (envelope.code !== 0) throw new Error(failureReason(envelope) || "Tripo rejected the task.");
+  if (ctx.action === "file-upload" || ctx.action === "file-presign") {
+    const data = envelope.data;
+    if (!isUploadedFileToken(data.file_token)) throw new Error("Tripo did not return a file token.");
+    if (ctx.action === "file-presign" && (typeof data.presigned_url !== "string" || !/^https:\/\/[^/\s?#@]+(?:[/?][^\s#]*)?$/.test(data.presigned_url) || !Number.isInteger(data.expires_in) || data.expires_in <= 0)) throw new Error("Tripo did not return a valid upload URL.");
+    const taskId = trimmed(data.task_id) || trimmed(ctx.publicTaskId) || utils.uuid();
+    const taskData = { code: 0, data: Object.assign({}, data, { type: ctx.action === "file-upload" ? "file_upload" : "file_presign", status: "success" }) };
+    return { taskId: taskId, taskData: taskData, immediate: { status: "SUCCESS", progress: "100%" }, state: usageFacts(ctx.requestBody, ctx.action, "tripo") };
+  }
   const taskId = trimmed(envelope.data.task_id);
   if (!taskId) throw new Error("Tripo did not return a task id.");
   const action = trimmed(ctx && ctx.action);
@@ -956,7 +1070,7 @@ export function parseTaskResult(ctx, body) {
   if (Number.isFinite(progress)) result.progress = String(Math.max(0, Math.min(100, Math.round(progress)))) + "%";
   if (status === "SUCCESS") {
     const output = outputOf(body);
-    const modelURL = outputURL(output, "model", "model_url") || outputURL(output, "pbr_model", "pbr_model_url") || outputURL(output, "base_model", "base_model_url") || outputURL(output, "rendered_image", "rendered_image_url");
+    const modelURL = outputURL(output, "model", "model_url") || outputURL(output, "pbr_model", "pbr_model_url") || outputURL(output, "base_model", "base_model_url") || outputURL(output, "seg_model", "seg_model_url") || outputURL(output, "rendered_image", "rendered_image_url");
     if (modelURL) result.url = modelURL;
   }
   return result;
@@ -1007,8 +1121,9 @@ export function listArtifacts(task) {
   for (const pair of OUTPUT_FILES) {
     if (outputURL(output, pair[0], pair[1])) artifacts.push({ key: pair[0], type: "file" });
   }
-  if (outputURL(output, "rendered_image", "rendered_image_url")) artifacts.push({ key: "rendered_image", type: "image" });
-  if (outputURL(output, "generated_image", "generated_image_url")) artifacts.push({ key: "generated_image", type: "image" });
+  for (const pair of OUTPUT_IMAGES) {
+    if (outputURL(output, pair[0], pair[1])) artifacts.push({ key: pair[0], type: "image" });
+  }
   return artifacts;
 }
 
@@ -1018,8 +1133,9 @@ export function buildContentRequest(ctx) {
   for (const pair of OUTPUT_FILES) {
     if (ctx.artifactKey === pair[0]) url = outputURL(output, pair[0], pair[1]);
   }
-  if (ctx.artifactKey === "rendered_image") url = outputURL(output, "rendered_image", "rendered_image_url");
-  if (ctx.artifactKey === "generated_image") url = outputURL(output, "generated_image", "generated_image_url");
+  for (const pair of OUTPUT_IMAGES) {
+    if (ctx.artifactKey === pair[0]) url = outputURL(output, pair[0], pair[1]);
+  }
   if (!url) throw new Error("The requested artifact is not available.");
   return { url: url, method: ctx.clientRequest.method, credentialless: true };
 }
