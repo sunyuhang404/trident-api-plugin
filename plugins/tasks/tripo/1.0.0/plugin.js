@@ -387,26 +387,46 @@ const MODEL_GENERATION_SCHEMAS = {
   "P2-20260801": P2_MODEL_GENERATION_SCHEMA,
 };
 
-// Keep the full schema for legacy facts and fallback model identities. Only
-// the generic tool identity hides generation prices owned by the five models.
-const TRIPO_BILLING_TYPES = BILLING_TYPES.filter(type => TEXTURED_ACTIONS.indexOf(type) < 0);
+// The generic identity prices only model processing, animation and multiview
+// tools. Keep the full schema above for legacy facts and fallback identities.
+const TRIPO_BILLING_TYPES = [
+  "image-to-multiview",
+  "edit-multiview",
+  "texture",
+  "convert",
+  "segment",
+  "smartsegment-image",
+  "smartsegment-model",
+  "complete",
+  "complete-quick",
+  "decimate-v1",
+  "decimate-v2",
+  "decimate-v3",
+  "uv",
+  "rig-check",
+  "rig",
+  "retarget",
+];
 const TRIPO_BILLING_LABELS = {};
 for (const type of TRIPO_BILLING_TYPES) TRIPO_BILLING_LABELS[type] = BILLING_LABELS[type];
-const TRIPO_USAGE_SCHEMA = Object.assign({}, USAGE_SCHEMA, {
+const TRIPO_USAGE_SCHEMA = {
   task_type: {
     enum: TRIPO_BILLING_TYPES,
     enumLabels: TRIPO_BILLING_LABELS,
     description: USAGE_SCHEMA.task_type.description,
   },
-});
-for (const key of ["b_texture", "e_p_series", "f_geometry", "h_low_poly", "i_parts"]) {
-  delete TRIPO_USAGE_SCHEMA[key];
-}
+  a_task: USAGE_SCHEMA.a_task,
+  c_texture_hd: USAGE_SCHEMA.c_texture_hd,
+  d_texture_8k: USAGE_SCHEMA.d_texture_8k,
+  g_quad: USAGE_SCHEMA.g_quad,
+  j_convert: USAGE_SCHEMA.j_convert,
+  k_animation: USAGE_SCHEMA.k_animation,
+  l_edit: USAGE_SCHEMA.l_edit,
+};
 const TRIPO_USAGE_EXAMPLES = [
   { label: "Model texture · HD", facts: usageFacts({ texture_quality: "detailed" }, "texture", "tripo") },
   { label: "Edit multiview · Two views", facts: usageFacts({ prompts: ["front", "left"] }, "edit-multiview", "tripo") },
   { label: "Retarget · Two animations", facts: usageFacts({ animations: ["walk", "run"] }, "retarget", "tripo") },
-  USAGE_EXAMPLES[1],
 ].map(example => {
   const facts = {};
   for (const key of Object.keys(TRIPO_USAGE_SCHEMA)) facts[key] = example.facts[key];
@@ -422,7 +442,7 @@ export const meta = {
     en: "Tripo 3D generation through the Tripo OpenAPI v3",
     zh: "通过 Tripo OpenAPI v3 生成三维模型",
   },
-  version: "1.0.12",
+  version: "1.0.13",
   author: { name: "sunyuhang404", url: "https://github.com/sunyuhang404/trident-api-plugin" },
   website: "https://github.com/sunyuhang404/trident-api-plugin",
   baseUrl: "https://openapi.tripo3d.com/v3",
@@ -1131,10 +1151,10 @@ function completionFacts(state, model, action) {
     if (!Number.isFinite(value) || value < 0) return null;
     facts[key] = value;
   }
-  // Generic 3D tasks created by older versions keep their frozen task_type.
-  // Omit it from the completion overlay: it is no longer a tool price row,
-  // while all numeric facts must remain available to their saved expressions.
-  if (TEXTURED_ACTIONS.indexOf(state.task_type) >= 0) delete facts.task_type;
+  // Tasks outside the current tool profile keep their frozen task_type.
+  // Omit it from the completion overlay so historical tasks still validate,
+  // retaining every numeric fact required by their saved expressions.
+  if (TRIPO_BILLING_TYPES.indexOf(state.task_type) < 0) delete facts.task_type;
   return facts;
 }
 
