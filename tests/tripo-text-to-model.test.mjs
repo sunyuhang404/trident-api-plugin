@@ -153,9 +153,12 @@ test('other task routes and existing tripo task settlement retain the legacy con
   assert.equal(usage.a_task, 1);
   assert.equal(usage.e_p_series, 1);
   assert.equal(usage.b_texture, 0);
-  assert.deepEqual(plugin.extractUsageOnComplete({ model: 'tripo', action: 'image-to-model', state: usage }, { status: 'SUCCESS' }), usage);
+  const completed = plugin.extractUsageOnComplete({ model: 'tripo', action: 'image-to-model', state: usage }, { status: 'SUCCESS' });
+  assert.equal(Object.hasOwn(completed, 'task_type'), false);
+  assert.deepEqual({ ...usage, ...completed }, usage);
   const oldTextUsage = plugin.extractUsage({ model: 'tripo', action: 'text-to-model', requestBody: { prompt: 'a chair' } });
-  assert.deepEqual(plugin.extractUsageOnComplete({ model: 'tripo', action: 'text-to-model', state: oldTextUsage }, { status: 'SUCCESS' }), oldTextUsage);
+  const oldTextCompleted = plugin.extractUsageOnComplete({ model: 'tripo', action: 'text-to-model', state: oldTextUsage }, { status: 'SUCCESS' });
+  assert.deepEqual({ ...oldTextUsage, ...oldTextCompleted }, oldTextUsage);
   assert.equal(plugin.extractUsage({ model: versions[0], action: 'text-to-model', usagePurpose: 'billing_ratios', requestBody: {} }), null);
 });
 
@@ -649,5 +652,97 @@ test('file references compose through upstream new-api gateways and retain zero 
     assert.equal(request.body.input, 'tripo-file:upstream_upload');
     const next = decode(request.body, 'models/import');
     assert.deepEqual(next.originTaskIds, ['upstream_upload']);
+  }
+});
+
+test('generic tripo pricing omits only 3D generation rows and their exclusive price columns', () => {
+  const profile = plugin.meta.usageProfiles.find(profile => profile.models.includes('tripo'));
+  const removedFields = ['b_texture', 'e_p_series', 'f_geometry', 'h_low_poly', 'i_parts'];
+  const generationActions = ['text-to-model', 'image-to-model', 'multiview-to-model'];
+  assert.deepEqual(Object.keys(profile.schema).sort(), Object.keys(plugin.meta.usageSchema).filter(key => !removedFields.includes(key)).sort());
+  assert.deepEqual(profile.schema.task_type.enum, [
+    'text-to-image', 'image-to-image', 'image-to-multiview', 'edit-multiview',
+    'image-to-splat', 'image-to-depth', 'texture', 'convert', 'import', 'segment',
+    'smartsegment-image', 'smartsegment-model', 'complete', 'complete-quick',
+    'decimate-v1', 'decimate-v2', 'decimate-v3', 'uv', 'rig-check', 'rig',
+    'retarget', 'file-upload', 'file-presign',
+  ]);
+  for (const [key, field] of Object.entries(profile.schema)) {
+    if (key !== 'task_type') assert.deepEqual(field, plugin.meta.usageSchema[key]);
+  }
+  assert.deepEqual(Object.keys(profile.schema.task_type.enumLabels), profile.schema.task_type.enum);
+  for (const type of generationActions) assert.equal(profile.schema.task_type.enum.includes(type), false);
+  for (const example of profile.examples) {
+    assert.deepEqual(Object.keys(example.facts).sort(), Object.keys(profile.schema).sort());
+    assert.equal(profile.schema.task_type.enum.includes(example.facts.task_type), true);
+    for (const [key, value] of Object.entries(example.facts)) {
+      if (key !== 'task_type') assert.equal(Number.isFinite(value) && value >= 0, true);
+    }
+  }
+});
+
+test('tool and image routes retain their identities, quantities and completion under the tripo profile', () => {
+  const schema = plugin.meta.usageProfiles.find(profile => profile.models.includes('tripo')).schema;
+  const cases = [
+    ['generation/text-to-image', { prompt: 'a chair', model: 'banana2', size: '4k' }, 'text-to-image', 'm_img_04_banana2_4k', 1],
+    ['generation/image-to-image', { input: 'https://example.com/input.png', prompt: 'a chair', model: 'seedream_v5' }, 'image-to-image', 'm_img_01_seedream', 1],
+    ['generation/image-to-multiview', { input: 'https://example.com/input.png' }, 'image-to-multiview', 'a_task', 1],
+    ['generation/edit-multiview', { inputs: ['https://example.com/front.png'], prompts: ['front', 'left'] }, 'edit-multiview', 'l_edit', 2],
+    ['generation/image-to-splat', { input: 'https://example.com/input.png' }, 'image-to-splat', 'a_task', 1],
+    ['generation/image-to-depth', { input: 'https://example.com/input.png' }, 'image-to-depth', 'a_task', 1],
+    ['models/texture', { input: 'https://example.com/model.glb', texture_quality: 'detailed' }, 'texture', 'c_texture_hd', 1],
+    ['models/texture', { input: 'https://example.com/model.glb', texture_quality: 'extreme' }, 'texture', 'd_texture_8k', 1],
+    ['models/convert', { input: 'https://example.com/model.glb', format: 'GLTF', face_limit: 50000 }, 'convert', 'j_convert', 1],
+    ['models/import', { input: 'https://example.com/model.glb' }, 'import', 'a_task', 1],
+    ['mesh/segment', { input: 'https://example.com/model.glb' }, 'segment', 'a_task', 1],
+    ['mesh/smartsegment', { input: 'https://example.com/image.png', seg_type: 'image' }, 'smartsegment-image', 'a_task', 1],
+    ['mesh/smartsegment', { input: 'https://example.com/model.glb', seg_type: 'model' }, 'smartsegment-model', 'a_task', 1],
+    ['mesh/complete', { input: 'https://example.com/model.glb' }, 'complete', 'a_task', 1],
+    ['mesh/complete', { input: 'https://example.com/model.glb', completion_mode: 'quick_cap' }, 'complete-quick', 'a_task', 1],
+    ['mesh/decimate', { input: 'https://example.com/model.glb', model: 'v1.0' }, 'decimate-v1', 'a_task', 1],
+    ['mesh/decimate', { input: 'https://example.com/model.glb' }, 'decimate-v2', 'a_task', 1],
+    ['mesh/decimate', { input: 'https://example.com/model.glb', model: 'v3.0', quad: true }, 'decimate-v3', 'g_quad', 1],
+    ['mesh/uv', { input: 'https://example.com/model.glb' }, 'uv', 'a_task', 1],
+    ['animations/rig-check', { input: 'https://example.com/model.glb' }, 'rig-check', 'a_task', 1],
+    ['animations/rig', { input: 'https://example.com/model.glb' }, 'rig', 'a_task', 1],
+    ['animations/retarget', { input: 'https://example.com/model.glb', animations: ['walk', 'run'] }, 'retarget', 'k_animation', 2],
+  ];
+  for (const [suffix, body, type, field, quantity] of cases) {
+    const route = plugin.meta.routes.find(route => route.path === '/tripo/v3/' + suffix);
+    assert.equal(route.decode, 'decodeSubmit');
+    const before = structuredClone(body);
+    const intent = decode(body, suffix);
+    assert.equal(intent.model, 'tripo');
+    assert.deepEqual(intent.requestBody, before);
+    const ctx = { ...intent, baseUrl: 'https://openapi.tripo3d.com/v3', authHeader: 'Bearer fixture' };
+    assert.deepEqual(plugin.buildSubmitRequest(ctx).body, before);
+    const usage = plugin.extractUsage(ctx);
+    assert.equal(usage.task_type, type);
+    assert.equal(schema.task_type.enum.includes(type), true);
+    assert.equal(usage[field], quantity);
+    assert.equal(Object.hasOwn(schema, field), true);
+    for (const key of ['b_texture', 'e_p_series', 'f_geometry', 'h_low_poly', 'i_parts']) assert.equal(usage[key], 0);
+    const parsed = plugin.parseSubmitResponse(ctx, { body: { code: 0, data: { task_id: 'task_fixture' } } });
+    assert.deepEqual(parsed.state, usage);
+    assert.deepEqual(plugin.extractUsageOnComplete({ model: 'tripo', action: intent.action, state: parsed.state }, { status: 'SUCCESS' }), usage);
+    assert.deepEqual(body, before);
+  }
+});
+
+test('legacy generic 3D completion preserves frozen quantities and task types without mutating state', () => {
+  for (const action of ['text-to-model', 'image-to-model', 'multiview-to-model']) {
+    const state = plugin.extractUsage({ model: 'tripo', action, requestBody: {
+      model: versions[0], texture_quality: 'extreme', geometry_quality: 'detailed', quad: true, smart_low_poly: true,
+    } });
+    const before = structuredClone(state);
+    const completed = plugin.extractUsageOnComplete({ model: 'tripo', action, state }, { status: 'SUCCESS' });
+    assert.equal(Object.hasOwn(completed, 'task_type'), false);
+    assert.deepEqual({ ...state, ...completed }, before);
+    assert.deepEqual(state, before);
+    assert.equal(completed.b_texture, 1);
+    assert.equal(completed.f_geometry, 1);
+    assert.equal(completed.h_low_poly, 1);
+    assert.equal(plugin.extractUsageOnComplete({ model: 'tripo', action, state }, { status: 'FAILURE' }), null);
+    assert.equal(plugin.extractUsageOnComplete({ model: 'tripo', action, state: { ...state, f_geometry: -1 } }, { status: 'SUCCESS' }), null);
   }
 });
