@@ -390,7 +390,7 @@ export const meta = {
     en: "Tripo 3D generation through the Tripo OpenAPI v3",
     zh: "通过 Tripo OpenAPI v3 生成三维模型",
   },
-  version: "1.0.8",
+  version: "1.0.9",
   author: { name: "sunyuhang404", url: "https://github.com/sunyuhang404/trident-api-plugin" },
   website: "https://github.com/sunyuhang404/trident-api-plugin",
   baseUrl: "https://openapi.tripo3d.com/v3",
@@ -524,8 +524,28 @@ function isTaskReference(value) {
   return !!text && !isHTTPURL(text) && !isFileToken(text);
 }
 
-function pushId(ids, value) {
+// Child references carry only the public parent ID and a fixed output selector.
+// The host authorizes and pins the parent before the driver reads its child ID.
+function parseChildTaskReference(value) {
   const text = trimmed(value);
+  if (text.indexOf("tripo-child:") !== 0) return null;
+  const match = text.match(/^tripo-child:([^:]+):(seg_task_id|model_task_id)$/);
+  if (!match) throw new Error("The smart segmentation child reference is invalid.");
+  let taskId;
+  try {
+    taskId = decodeURIComponent(match[1]);
+  } catch (error) {
+    throw new Error("The smart segmentation child reference is invalid.");
+  }
+  if (!taskId || taskId !== taskId.trim() || taskId.length > 128 || encodeURIComponent(taskId) !== match[1]) {
+    throw new Error("The smart segmentation child reference is invalid.");
+  }
+  return { taskId: taskId, field: match[2] };
+}
+
+function pushId(ids, value) {
+  const child = parseChildTaskReference(value);
+  const text = child ? child.taskId : trimmed(value);
   if (text && ids.indexOf(text) < 0) ids.push(text);
 }
 
@@ -591,21 +611,31 @@ function upstreamURL(ctx, suffix, taskId) {
   return base + path;
 }
 
+function resolveTaskReference(value, originTasks) {
+  const child = parseChildTaskReference(value);
+  const publicId = child ? child.taskId : trimmed(value);
+  const task = (originTasks || []).find(function (item) { return item && trimmed(item.taskId) === publicId; });
+  if (!child) return task && trimmed(task.upstreamTaskId) ? trimmed(task.upstreamTaskId) : value;
+  if (!task || task.action !== "smartsegment" || task.status !== "SUCCESS") {
+    throw new Error("The smart segmentation child task is not available.");
+  }
+  const upstreamId = outputOf(task.data)[child.field];
+  if (typeof upstreamId !== "string" || !isTaskReference(upstreamId)) {
+    throw new Error("The smart segmentation child task is not available.");
+  }
+  // An upstream new-api gateway can return its own child reference here.
+  // Forward that reference unchanged so the next gateway authorizes its parent.
+  return trimmed(upstreamId);
+}
+
 function withUpstreamTaskIds(body, originTasks) {
   const next = utils.json.clone(body);
-  const upstreamByPublicId = {};
-  for (const task of originTasks || []) {
-    const publicId = trimmed(task && task.taskId);
-    const upstreamId = trimmed(task && task.upstreamTaskId);
-    if (publicId && upstreamId) upstreamByPublicId[publicId] = upstreamId;
-  }
-  if (isTaskReference(next.input) && upstreamByPublicId[trimmed(next.input)]) next.input = upstreamByPublicId[trimmed(next.input)];
-  if (trimmed(next.task_id) && upstreamByPublicId[trimmed(next.task_id)]) next.task_id = upstreamByPublicId[trimmed(next.task_id)];
+  if (isTaskReference(next.input)) next.input = resolveTaskReference(next.input, originTasks);
+  if (trimmed(next.task_id)) next.task_id = resolveTaskReference(next.task_id, originTasks);
   if (Array.isArray(next.inputs)) {
     for (const item of next.inputs) {
       if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-      const publicId = trimmed(item.task_id);
-      if (publicId && upstreamByPublicId[publicId]) item.task_id = upstreamByPublicId[publicId];
+      if (trimmed(item.task_id)) item.task_id = resolveTaskReference(item.task_id, originTasks);
     }
   }
   return next;
@@ -830,6 +860,20 @@ function failureReason(envelope) {
   return trimmed(envelope.message || envelope.data.error_message || envelope.data.message);
 }
 
+function publicTaskData(task) {
+  const data = Object.assign({}, taskEnvelope(task.data).data, { task_id: task.task_id });
+  if (task.status === "SUCCESS" && (data.type === "smartsegment_image" || data.type === "smartsegment_model")) {
+    const output = Object.assign({}, outputOf(task.data));
+    for (const field of ["seg_task_id", "model_task_id"]) {
+      if (typeof output[field] === "string" && isTaskReference(output[field])) {
+        output[field] = "tripo-child:" + encodeURIComponent(task.task_id) + ":" + field;
+      }
+    }
+    data.output = output;
+  }
+  return data;
+}
+
 export const native = {
   decodeSubmit: function (ctx) {
     if (!ctx.body || ctx.body.kind !== "json") throw new Error("A JSON body is required.");
@@ -848,12 +892,11 @@ export const native = {
   },
   taskCreated: function (ctx, task) {
     const result = task.data && typeof task.data === "object" && !Array.isArray(task.data) ? task.data : {};
-    const data = result.data && typeof result.data === "object" && !Array.isArray(result.data) ? result.data : {};
-    return Object.assign({}, result, { code: result.code === undefined ? 0 : result.code, data: Object.assign({}, data, { task_id: task.task_id }) });
+    return Object.assign({}, result, { code: result.code === undefined ? 0 : result.code, data: publicTaskData(task) });
   },
   taskStatus: function (ctx, task) {
     const envelope = taskEnvelope(task.data);
-    const data = Object.assign({}, envelope.data, { task_id: task.task_id });
+    const data = publicTaskData(task);
     if (task.fail_reason && !data.error_message) data.error_message = task.fail_reason;
     return { code: envelope.code === undefined || envelope.code === null ? 0 : envelope.code, data: data };
   },

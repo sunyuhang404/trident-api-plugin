@@ -348,3 +348,141 @@ test('missing or invalid generated images preserve existing artifacts and cannot
   assert.deepEqual(plugin.listArtifacts({ status: 'SUCCESS', data: { data: { output: {} } } }), []);
   assert.deepEqual(plugin.listArtifacts({ status: 'IN_PROGRESS', data: { data: { output: { generated_image_url: 'https://cdn.example/generated.png' } } } }), []);
 });
+
+function smartSegmentTask(type = 'smartsegment_image') {
+  return {
+    task_id: 'gateway_parent', status: 'SUCCESS',
+    data: { code: 0, data: { task_id: 'upstream_parent', type, status: 'success', output: {
+      seg_task_id: 'upstream_segment', model_task_id: 'upstream_model',
+      seg_model_url: 'https://cdn.tripo3d.ai/seg.glb', mask_url: 'https://cdn.tripo3d.ai/mask.png',
+    } } },
+  };
+}
+
+test('smart segmentation presents parent-bound child references without modifying persisted results', () => {
+  for (const type of ['smartsegment_image', 'smartsegment_model']) {
+    const task = smartSegmentTask(type);
+    const before = structuredClone(task);
+    for (const present of [plugin.native.taskCreated, plugin.native.taskStatus]) {
+      const response = present({}, task);
+      assert.equal(response.data.task_id, task.task_id);
+      assert.equal(response.data.output.seg_task_id, 'tripo-child:gateway_parent:seg_task_id');
+      assert.equal(response.data.output.model_task_id, 'tripo-child:gateway_parent:model_task_id');
+      assert.equal(response.data.output.seg_model_url, task.data.data.output.seg_model_url);
+      assert.deepEqual(task, before);
+      assert.deepEqual(present({}, task), response);
+    }
+  }
+  const task = smartSegmentTask();
+  delete task.data.data.output.model_task_id;
+  assert.equal(plugin.native.taskStatus({}, task).data.output.model_task_id, undefined);
+  const pending = { ...task, status: 'IN_PROGRESS', data: { code: 0, data: { type: 'smartsegment_image', status: 'running' } } };
+  assert.equal(plugin.native.taskStatus({}, pending).data.output, undefined);
+  const normal = smartSegmentTask('mesh_segmentation');
+  assert.equal(plugin.native.taskStatus({}, normal).data.output.seg_task_id, 'upstream_segment');
+});
+
+test('smart segmentation children authorize the parent and resolve only its persisted child for subsequent tasks', () => {
+  for (const field of ['seg_task_id', 'model_task_id']) {
+    for (const kind of ['vendor', 'new_api']) {
+      const task = smartSegmentTask();
+      const response = plugin.native.taskStatus({}, task);
+      const body = { input: response.data.output[field], part_names: ['part0'], completion_mode: 'quick_cap' };
+      const intent = decode(body, 'mesh/complete');
+      assert.deepEqual(intent.originTaskIds, ['gateway_parent']);
+      assert.equal(intent.model, 'tripo');
+      const origin = { taskId: task.task_id, upstreamTaskId: 'upstream_parent', action: 'smartsegment', status: 'SUCCESS', data: task.data };
+      const ctx = { model: 'tripo', action: intent.action, requestBody: intent.requestBody, originTasks: [origin], baseUrl: 'https://provider.example', authHeader: 'Bearer fixture', upstream: { kind } };
+      const before = structuredClone(ctx);
+      const request = plugin.buildSubmitRequest(ctx);
+      assert.equal(request.body.input, task.data.data.output[field]);
+      assert.equal(request.url, 'https://provider.example' + (kind === 'new_api' ? '/tripo/v3' : '') + '/mesh/complete');
+      assert.equal(plugin.extractUsage(ctx).task_type, 'complete-quick');
+      assert.deepEqual(ctx, before);
+    }
+  }
+});
+
+test('smart segmentation model children support normal postprocessing without changing other parameters', () => {
+  const task = smartSegmentTask();
+  const input = plugin.native.taskStatus({}, task).data.output.model_task_id;
+  const cases = [
+    ['models/texture', { input, model: 'v3.5-20260815', texture_quality: 'fast', texture_prompt: { image: { file_token: 'file_reference' } } }],
+    ['models/convert', { input, format: 'FBX', texture_packaging: 'zip' }],
+    ['animations/rig', { input, model: 'v3.0-20260909', rig_type: 'biped', spec: 'vrm' }],
+  ];
+  for (const [suffix, body] of cases) {
+    const intent = decode(body, suffix);
+    assert.deepEqual(intent.originTaskIds, ['gateway_parent']);
+    const request = plugin.buildSubmitRequest({ model: 'tripo', action: intent.action, requestBody: intent.requestBody,
+      originTasks: [{ taskId: task.task_id, action: 'smartsegment', status: 'SUCCESS', data: task.data }],
+      baseUrl: 'https://provider.example', apiKey: 'fixture' });
+    assert.deepEqual(request.body, { ...body, input: 'upstream_model' });
+    assert.equal(body.input, input);
+  }
+});
+
+test('child references cannot select arbitrary IDs or fields and reject malformed parents', () => {
+  const invalid = [
+    'tripo-child:', 'tripo-child::seg_task_id', 'tripo-child:parent:other_field',
+    'tripo-child:parent:seg_task_id:injected', 'tripo-child:%:seg_task_id',
+    'tripo-child:%20parent:seg_task_id', 'tripo-child:parent%20:seg_task_id',
+    'tripo-child:%70arent:seg_task_id', 'tripo-child:' + 'a'.repeat(129) + ':seg_task_id',
+  ];
+  for (const input of invalid) {
+    assert.throws(() => decode({ input }, 'mesh/complete'), /child reference is invalid/);
+    assert.throws(() => plugin.buildSubmitRequest({ model: 'tripo', action: 'complete', requestBody: { input }, originTasks: [] }), /child reference is invalid/);
+  }
+});
+
+test('child references fail closed when the authorized successful smart segmentation parent or child is unavailable', () => {
+  const task = smartSegmentTask();
+  const origin = { taskId: task.task_id, upstreamTaskId: 'upstream_parent', action: 'smartsegment', status: 'SUCCESS', data: task.data };
+  const origins = [
+    [], [{ ...origin, taskId: 'different_parent' }], [{ ...origin, status: 'IN_PROGRESS' }],
+    [{ ...origin, status: 'FAILURE' }], [{ ...origin, action: 'text-to-model' }],
+    [{ ...origin, data: null }], [{ ...origin, data: { code: 0, data: { output: {} } } }],
+  ];
+  for (const value of [null, '', 42, { task_id: 'untrusted' }, 'https://example.com/model.glb', 'file_fixture']) {
+    origins.push([{ ...origin, data: { code: 0, data: { output: { seg_task_id: value } } } }]);
+  }
+  for (const originTasks of origins) {
+    assert.throws(() => plugin.buildSubmitRequest({ model: 'tripo', action: 'complete', requestBody: { input: 'tripo-child:gateway_parent:seg_task_id' }, originTasks }), /child task is not available/);
+  }
+});
+
+test('child references compose across new-api gateways without exposing or trusting caller-supplied upstream IDs', () => {
+  const upstreamTask = smartSegmentTask();
+  upstreamTask.task_id = 'upstream_gateway_parent';
+  const upstreamResult = plugin.native.taskStatus({}, upstreamTask);
+  const downstreamTask = { task_id: 'downstream_parent', status: 'SUCCESS', data: upstreamResult };
+  const downstreamResult = plugin.native.taskStatus({}, downstreamTask);
+  const intent = decode({ input: downstreamResult.data.output.seg_task_id }, 'mesh/complete');
+  assert.deepEqual(intent.originTaskIds, ['downstream_parent']);
+  const downstreamRequest = plugin.buildSubmitRequest({ model: 'tripo', action: 'complete', requestBody: intent.requestBody,
+    originTasks: [{ taskId: 'downstream_parent', action: 'smartsegment', status: 'SUCCESS', data: upstreamResult }],
+    baseUrl: 'https://upstream-gateway.example', apiKey: 'fixture', upstream: { kind: 'new_api' } });
+  assert.equal(downstreamRequest.body.input, 'tripo-child:upstream_gateway_parent:seg_task_id');
+  const upstreamIntent = decode(downstreamRequest.body, 'mesh/complete');
+  assert.deepEqual(upstreamIntent.originTaskIds, ['upstream_gateway_parent']);
+  const vendorRequest = plugin.buildSubmitRequest({ model: 'tripo', action: 'complete', requestBody: upstreamIntent.requestBody,
+    originTasks: [{ taskId: upstreamTask.task_id, action: 'smartsegment', status: 'SUCCESS', data: upstreamTask.data }],
+    baseUrl: 'https://provider.example', apiKey: 'fixture' });
+  assert.equal(vendorRequest.body.input, 'upstream_segment');
+});
+
+test('encoded public parent IDs round-trip while ordinary task, URL and file-token inputs keep existing behavior', () => {
+  const task = smartSegmentTask();
+  task.task_id = 'gateway:parent';
+  const input = plugin.native.taskStatus({}, task).data.output.model_task_id;
+  assert.equal(input, 'tripo-child:gateway%3Aparent:model_task_id');
+  assert.deepEqual(decode({ input }, 'models/texture').originTaskIds, ['gateway:parent']);
+  for (const input of ['gateway_parent', 'https://example.com/model.glb', 'file_fixture']) {
+    const intent = decode({ input }, 'models/texture');
+    assert.deepEqual(intent.originTaskIds, input === 'gateway_parent' ? ['gateway_parent'] : []);
+    const request = plugin.buildSubmitRequest({ model: 'tripo', action: 'texture', requestBody: intent.requestBody,
+      originTasks: [{ taskId: 'gateway_parent', upstreamTaskId: 'upstream_parent' }],
+      baseUrl: 'https://provider.example', apiKey: 'fixture' });
+    assert.equal(request.body.input, input === 'gateway_parent' ? 'upstream_parent' : input);
+  }
+});
