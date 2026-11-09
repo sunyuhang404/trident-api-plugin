@@ -387,8 +387,9 @@ const MODEL_GENERATION_SCHEMAS = {
   "P2-20260801": P2_MODEL_GENERATION_SCHEMA,
 };
 
-// The generic identity prices only model processing, animation and multiview
-// tools. Keep the full schema above for legacy facts and fallback identities.
+// The generic identity covers model processing, animation, multiview tools
+// and upload operations. Uploads report zero generation quantities. Keep the
+// full schema above for legacy facts and fallback identities.
 const TRIPO_BILLING_TYPES = [
   "image-to-multiview",
   "edit-multiview",
@@ -406,6 +407,8 @@ const TRIPO_BILLING_TYPES = [
   "rig-check",
   "rig",
   "retarget",
+  "file-upload",
+  "file-presign",
 ];
 const TRIPO_BILLING_LABELS = {};
 for (const type of TRIPO_BILLING_TYPES) TRIPO_BILLING_LABELS[type] = BILLING_LABELS[type];
@@ -442,7 +445,7 @@ export const meta = {
     en: "Tripo 3D generation through the Tripo OpenAPI v3",
     zh: "通过 Tripo OpenAPI v3 生成三维模型",
   },
-  version: "1.0.13",
+  version: "1.0.14",
   author: { name: "sunyuhang404", url: "https://github.com/sunyuhang404/trident-api-plugin" },
   website: "https://github.com/sunyuhang404/trident-api-plugin",
   baseUrl: "https://openapi.tripo3d.com/v3",

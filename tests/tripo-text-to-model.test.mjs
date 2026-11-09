@@ -637,11 +637,13 @@ test('file references compose through upstream new-api gateways and retain zero 
     const ctx = uploadContext(action);
     const facts = plugin.extractUsage(ctx);
     assert.equal(facts.task_type, action);
+    const schema = plugin.meta.usageProfiles.find(profile => profile.models.includes(ctx.model)).schema;
+    assert.equal(schema.task_type.enum.includes(facts.task_type), true, 'upload facts must match the selected host schema');
     assert.equal(Object.entries(facts).filter(([key]) => key !== 'task_type').every(([, value]) => value === 0), true);
     const data = { file_token: 'file_vendor', ...(action === 'file-presign' ? { presigned_url: 'https://storage.example/file', expires_in: 1800 } : {}) };
     const parsed = plugin.parseSubmitResponse(ctx, { body: { code: 0, data } });
     const completed = plugin.extractUsageOnComplete({ model: 'tripo', action, state: parsed.state }, parsed.immediate);
-    assert.equal(Object.hasOwn(completed, 'task_type'), false);
+    assert.equal(completed.task_type, action);
     assert.deepEqual({ ...facts, ...completed }, facts);
     assert.equal(plugin.extractUsageOnComplete({ model: 'tripo', action, state: parsed.state }, { status: 'FAILURE' }), null);
     const upstream = plugin.native.taskCreated({}, { task_id: 'upstream_upload', status: 'SUCCESS', data: parsed.taskData });
@@ -657,7 +659,7 @@ test('file references compose through upstream new-api gateways and retain zero 
   }
 });
 
-test('generic tripo pricing exposes only the agreed model processing, multiview and animation prices', () => {
+test('generic tripo pricing exposes tool prices and upload types with no extra generation quantities', () => {
   const profile = plugin.meta.usageProfiles.find(profile => profile.models.includes('tripo'));
   const priceFields = ['a_task', 'c_texture_hd', 'd_texture_8k', 'g_quad', 'j_convert', 'k_animation', 'l_edit'];
   assert.deepEqual(Object.keys(profile.schema).sort(), ['task_type', ...priceFields].sort());
@@ -665,13 +667,13 @@ test('generic tripo pricing exposes only the agreed model processing, multiview 
     'image-to-multiview', 'edit-multiview', 'texture', 'convert', 'segment',
     'smartsegment-image', 'smartsegment-model', 'complete', 'complete-quick',
     'decimate-v1', 'decimate-v2', 'decimate-v3', 'uv', 'rig-check', 'rig',
-    'retarget',
+    'retarget', 'file-upload', 'file-presign',
   ]);
   for (const [key, field] of Object.entries(profile.schema)) {
     if (key !== 'task_type') assert.deepEqual(field, plugin.meta.usageSchema[key]);
   }
   assert.deepEqual(Object.keys(profile.schema.task_type.enumLabels), profile.schema.task_type.enum);
-  for (const type of ['text-to-model', 'image-to-model', 'multiview-to-model', 'text-to-image', 'image-to-image', 'image-to-splat', 'image-to-depth', 'import', 'file-upload', 'file-presign']) {
+  for (const type of ['text-to-model', 'image-to-model', 'multiview-to-model', 'text-to-image', 'image-to-image', 'image-to-splat', 'image-to-depth', 'import']) {
     assert.equal(profile.schema.task_type.enum.includes(type), false);
     assert.equal(plugin.meta.usageSchema.task_type.enum.includes(type), true);
   }
@@ -754,8 +756,6 @@ test('excluded legacy routes keep their code and frozen completion facts without
     ['image-to-splat', 'generation/image-to-splat', { input: 'https://example.com/input.png' }],
     ['image-to-depth', 'generation/image-to-depth', { input: 'https://example.com/input.png' }],
     ['import', 'models/import', { input: 'https://example.com/model.glb' }],
-    ['file-upload', 'files', {}],
-    ['file-presign', 'files/presign', {}],
   ];
   for (const [action, suffix, body] of cases) {
     assert.equal(plugin.meta.routes.some(route => route.path === '/tripo/v3/' + suffix), true);
