@@ -33,6 +33,39 @@
           ]
         }
       ]
+    },
+    {
+      "key": "byteplus",
+      "name": "BytePlus ModelArk",
+      "icon": "text:BP",
+      "description": {
+        "en": "BytePlus ModelArk Dreamina Seedance video and Seedream / Dola image generation",
+        "zh": "BytePlus ModelArk Dreamina Seedance 视频与 Seedream / Dola 图片生成"
+      },
+      "website": "https://github.com/sunyuhang404/trident-api-plugin",
+      "models": [
+        "dreamina-seedance-2-5-flash-261115",
+        "dreamina-seedance-2-5-260628",
+        "dreamina-seedance-2-0-260128",
+        "dreamina-seedance-2-0-fast-260128",
+        "dreamina-seedance-2-0-mini-260615",
+        "dola-seedream-5-5-261028",
+        "dola-seedream-5-0-pro-260628",
+        "dola-seedream-5-0-flash-260915",
+        "seedream-5-0-lite-260128",
+        "seedream-5-0-260128"
+      ],
+      "baseUrl": "https://ark.ap-southeast.bytepluses.com",
+      "latest": "1.0.0",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "kind": "task",
+          "path": "plugins/tasks/byteplus/1.0.0/plugin.js",
+          "sha256": "4c3f2fb02b6446f132b6152d8269d8ec96f536b90d90cc7291b631d5ca50a1ab",
+          "baseUrl": "https://ark.ap-southeast.bytepluses.com"
+        }
+      ]
     }
   ]
 }
