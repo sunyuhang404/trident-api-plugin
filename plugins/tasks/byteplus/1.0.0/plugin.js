@@ -56,19 +56,7 @@ const IMAGE_MODELS = {
     tools: false,
     fastPromptMode: false,
   },
-  "seedream-5-0-lite-260128": {
-    presets: ["2K", "3K", "4K"],
-    minPixels: 3686400,
-    maxPixels: 16777216,
-    maxReferenceImages: 14,
-    sequential: true,
-    layers: false,
-    outputFormat: true,
-    background: false,
-    tools: true,
-    fastPromptMode: false,
-  },
-  "seedream-5-0-260128": {
+  "dola-seedream-5-0-lite-260128": {
     presets: ["2K", "3K", "4K"],
     minPixels: 3686400,
     maxPixels: 16777216,
@@ -285,7 +273,7 @@ export const meta = {
     en: "BytePlus ModelArk Dreamina Seedance video and Seedream / Dola image generation",
     zh: "BytePlus ModelArk Dreamina Seedance 视频与 Seedream / Dola 图片生成",
   },
-  version: "1.0.0",
+  version: "1.0.1",
   author: { name: "sunyuhang404", url: "https://github.com/sunyuhang404/trident-api-plugin" },
   // Type-61 Task Plugin channels; do not claim VolcEngine 45/54 (domestic doubao).
   baseUrl: "https://ark.ap-southeast.bytepluses.com",

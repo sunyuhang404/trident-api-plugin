@@ -18,16 +18,16 @@ const imageModels = [
   'dola-seedream-5-5-261028',
   'dola-seedream-5-0-pro-260628',
   'dola-seedream-5-0-flash-260915',
-  'seedream-5-0-lite-260128',
-  'seedream-5-0-260128',
+  'dola-seedream-5-0-lite-260128',
 ];
 
 test('marketplace meta declares BytePlus ModelArk video and image models', () => {
   assert.equal(plugin.meta.key, 'byteplus');
-  assert.equal(plugin.meta.version, '1.0.0');
+  assert.equal(plugin.meta.version, '1.0.1');
   assert.equal(plugin.meta.baseUrl, 'https://ark.ap-southeast.bytepluses.com');
   assert.equal(plugin.meta.channelTypes, undefined);
   assert.deepEqual(plugin.meta.models, [...videoModels, ...imageModels]);
+  assert.ok(plugin.meta.models.every((name) => !name.startsWith('seedream-')));
   assert.ok(!plugin.meta.models.some((name) => name.includes('1-0') || name.includes('4-0') || name.includes('4-5')));
 });
 

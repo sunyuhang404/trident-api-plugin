@@ -66,8 +66,7 @@ new-api 任务插件市场源。当前包含：
 | `dola-seedream-5-5-261028` | 交互编辑 + 图层拆分 |
 | `dola-seedream-5-0-pro-260628` | 交互编辑 + 图层拆分 |
 | `dola-seedream-5-0-flash-260915` | 交互编辑 + 图层拆分 |
-| `seedream-5-0-260128` | 单图 / 组图，可联网搜索 |
-| `seedream-5-0-lite-260128` | 同上 lite |
+| `dola-seedream-5-0-lite-260128` | 单图 / 组图，可联网搜索 |
 
 不包含 Seedream 4.x。
 
